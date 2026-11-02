@@ -1,0 +1,35 @@
+name: Docs
+description: Something in the README or docs/ is wrong, out of date or missing
+labels: ["type: docs"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: What the docs are about. Sets the issue's area label.
+      options:
+        - Now Playing
+        - Hold menu
+        - Queue
+        - Hidden songs
+        - Settings
+        - Playback
+        - Battery
+        - Install
+        - Tools
+        - Emulator
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: The file, and the section or line.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What's wrong
+    validations:
+      required: true

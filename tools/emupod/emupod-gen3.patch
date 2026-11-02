@@ -1,0 +1,310 @@
+diff --git a/rust/armcore/src/arm.rs b/rust/armcore/src/arm.rs
+index 85db260..80b66cc 100644
+--- a/rust/armcore/src/arm.rs
++++ b/rust/armcore/src/arm.rs
+@@ -1,7 +1,7 @@
+ //! The ARM (32-bit) instruction set of the ARM7TDMI: data processing, multiplies, single and block transfers,
+ //! halfword and signed transfers, SWP, PSR transfers, branches, BX, SWI.
+ 
+-use crate::{mode_index, ArmFn, Bus, Cpu, Exception, BIT_T, MODE_SVC, MODE_UND};
++use crate::{mode_index, ArmFn, Bus, Cpu, Exception, BIT_I, BIT_T, MODE_SVC, MODE_UND};
+ 
+ /// `a + b + cin` with the carry out and the signed overflow.
+ #[inline(always)]
+@@ -456,14 +456,22 @@ fn mrs<B: Bus>(c: &mut Cpu, _b: &mut B, i: u32) {
+     c.r[rd] = if i & (1 << 22) != 0 { c.current_spsr() } else { c.cpsr };
+ }
+ 
+-fn msr_reg<B: Bus>(c: &mut Cpu, _b: &mut B, i: u32) {
++fn msr_reg<B: Bus>(c: &mut Cpu, b: &mut B, i: u32) {
+     let v = c.r[(i & 15) as usize];
++    let was = c.cpsr;
+     c.msr(i & (1 << 22) != 0, (i >> 16) & 15, v);
++    if was & BIT_I != 0 && c.cpsr & BIT_I == 0 {
++        b.irq_unmasked();
++    }
+ }
+ 
+-fn msr_imm<B: Bus>(c: &mut Cpu, _b: &mut B, i: u32) {
++fn msr_imm<B: Bus>(c: &mut Cpu, b: &mut B, i: u32) {
+     let v = (i & 0xff).rotate_right((i >> 7) & 0x1e);
++    let was = c.cpsr;
+     c.msr(i & (1 << 22) != 0, (i >> 16) & 15, v);
++    if was & BIT_I != 0 && c.cpsr & BIT_I == 0 {
++        b.irq_unmasked();
++    }
+ }
+ 
+ fn branch<B: Bus, const LINK: bool>(c: &mut Cpu, _b: &mut B, i: u32) {
+diff --git a/rust/armcore/src/lib.rs b/rust/armcore/src/lib.rs
+index c2639fb..edb3149 100644
+--- a/rust/armcore/src/lib.rs
++++ b/rust/armcore/src/lib.rs
+@@ -102,6 +102,10 @@ pub trait Bus {
+     fn stop(&self) -> bool {
+         false
+     }
++    /// Called when an MSR clears the CPSR's I bit (interrupts unmasked). A bus with an interrupt waiting can end the run here
++    /// (through `stop`) so the caller delivers it at once, as the hardware would, instead of at the next slice boundary.
++    #[inline(always)]
++    fn irq_unmasked(&mut self) {}
+     /// Whether `Core::run` may skip spin loops (see `Core::run`). Off by default.
+     #[inline(always)]
+     fn skip_enabled(&self) -> bool {
+diff --git a/rust/pp5002/src/ata.rs b/rust/pp5002/src/ata.rs
+index e76af14..69bc96d 100644
+--- a/rust/pp5002/src/ata.rs
++++ b/rust/pp5002/src/ata.rs
+@@ -371,6 +371,11 @@ impl Ata {
+         }
+     }
+ 
++    /// The device control register's last value (bit 1 = nIEN, bit 2 = SRST).
++    pub fn devctl(&self) -> u32 {
++        self.devctl
++    }
++
+     /// A write to the device control register (0xc00033f8). Clearing SRST after setting it resets the drive: what it was doing is
+     /// dropped and the registers hold the signature of an ATA device (count 1, sector 1, cylinder 0/0), with diagnostics passed.
+     pub fn control(&mut self, v: u32) {
+diff --git a/rust/pp5002/src/lib.rs b/rust/pp5002/src/lib.rs
+index d03a3ed..6a730fa 100644
+--- a/rust/pp5002/src/lib.rs
++++ b/rust/pp5002/src/lib.rs
+@@ -299,6 +299,14 @@ pub struct Shared {
+     pub fw: Option<fw::Engine>,
+     /// the storage controller's configuration word, 0xc0003024 (bit 0x40 always reads set: the drive answers)
+     ide_cfg: u32,
++    /// (3G study, EMUPOD_IDE_IRQ=<bit>) the interrupt-controller line the drive's INTRQ is wired to; None: never raised (1.x polls)
++    pub ide_irq: Option<u32>,
++    /// IDE interrupts delivered
++    pub ide_irqs: u64,
++    /// (3G study, with EMUPOD_IDE_IRQ) a key edge edge() could not deliver at once: delivered by ide_line() when IRQs open
++    pub gpio_late: bool,
++    /// (3G study) the clock/PLL block 0xcf005000..0xcf00503c as written, with non-zero defaults the 2.x clock code can divide by
++    pub clk: [u32; 16],
+ }
+ 
+ impl Audio {
+@@ -514,7 +522,14 @@ impl Shared {
+     fn regval(&mut self, a: u32) -> u32 {
+         if ata::is_taskfile(a) || a == ata::ALT {
+             let now = self.now();
+-            return self.ata.read(a, now);
++            let v = self.ata.read(a, now);
++            if self.ide_irq.is_some() && a == ata::CMD && v & 0x80 == 0 {
++                self.ata.intrq = false;
++            }
++            return v;
++        }
++        if self.ide_irq.is_some() && (0xcf00_5000..=0xcf00_503c).contains(&a) {
++            return self.clk[((a - 0xcf00_5000) >> 2) as usize];
+         }
+         if a == USEC_TIMER {
+             if self.cfg.slice_clock && self.sub < self.qlen.saturating_sub(1) {
+@@ -565,7 +580,7 @@ impl Shared {
+             0xc400_0000 => CPU_ID,
+             // The interrupt latch and the written bits are modelled for a machine booting from its chip (the bootloader and the disk-mode
+             // program wait on the latch); the firmware-in-DRAM machine keeps the constant its recordings were made with.
+-            0xc000_3024 if self.flash.is_none() => 0x40,
++            0xc000_3024 if self.flash.is_none() && self.ide_irq.is_none() => 0x40,
+             0xc000_3024 => (self.ide_cfg & !0x30) | 0x40 | if self.ata.intrq { 0x10 } else { 0 },
+             _ => 0,
+         }
+@@ -751,6 +766,8 @@ impl Shared {
+             self.ata.write(a, val, now);
+         } else if a == ata::ALT {
+             self.ata.control(val);
++        } else if self.ide_irq.is_some() && (0xcf00_5000..=0xcf00_503c).contains(&a) && !(a == 0xcf00_5030 && val & 4 != 0 && self.flash.is_some()) {
++            self.clk[((a - 0xcf00_5000) >> 2) as usize] = val;
+         } else if a == 0xcf00_5030 && val & 4 != 0 && self.flash.is_some() {
+             // the system reset Apple's updater asks for when it has rewritten the chip (0x28007afc)
+             self.reset_req = true;
+@@ -1116,6 +1133,15 @@ impl Bus for Shared {
+     fn stop(&self) -> bool {
+         self.stop_now
+     }
++    /// (3G study, with EMUPOD_IDE_IRQ) end the run when the CPU unmasks IRQs with one waiting, so the slice loop delivers it now.
++    /// 2.3's idle routine (0x12efc8) unmasks for a few instructions only, then masks again and sleeps; a slice boundary never fell in
++    /// that window, so a disk interrupt that came while it was masked was never taken and playback deadlocked.
++    #[inline(always)]
++    fn irq_unmasked(&mut self) {
++        if self.ide_irq.is_some() && self.who == Who::Cpu && (self.pending & self.cpu_en != 0 || self.tick_due || self.ata.intrq) {
++            self.stop_now = true;
++        }
++    }
+     #[inline(always)]
+     fn skip_enabled(&self) -> bool {
+         self.cfg.skip_loops
+@@ -1199,6 +1225,9 @@ pub struct Machine {
+     pub hook_log: Vec<(u64, u32, [u32; 16], u32)>,
+     /// With (reg, offset): each hook entry also records the word at r[reg] + offset (a message's type word, say); 0 if unmapped.
+     pub hook_peek: Option<(usize, u32)>,
++    /// With hook_count on, hooked pcs are counted into hook_counts instead of logged (no cap). hook_pcs must be sorted.
++    pub hook_count: bool,
++    pub hook_counts: std::collections::HashMap<u32, u64>,
+     pub cop_log: Vec<(u32, u32)>,
+     pub s: Shared,
+     pub cpu: Core<Shared>,
+@@ -1315,6 +1344,10 @@ impl Machine {
+             mmap: [0; 12],
+             low_flash: false,
+             ide_cfg: 0,
++            ide_irqs: 0,
++            gpio_late: false,
++            ide_irq: std::env::var("EMUPOD_IDE_IRQ").ok().and_then(|v| v.parse().ok()),
++            clk: { let mut c = [0u32; 16]; c[0x18 / 4] = 1; c[0x1c / 4] = 3; c },
+             reset_req: false,
+             resets: 0,
+             fw: None,
+@@ -1338,10 +1371,12 @@ impl Machine {
+             Some(v) if s.backlight_ok && osos.len() >= DEFAULT_VOL_AT + 4 && word(DEFAULT_VOL_AT) == DEFAULT_VOL_INSN => Some(v.min(127)),
+             _ => None,
+         };
+-        let mut m = Machine { watch_on: false, watch_addr: 0, watch_hit: None, watch_regs: [0; 16], watch_stop: true, watch_log: Vec::new(), bp_pc: 0xffff_ffff, bp_mem: Vec::new(), ring: std::collections::VecDeque::new(), bp_hits: Vec::new(), snap_cpu: None, hook_pcs: Vec::new(), hook_log: Vec::new(), hook_peek: None, cop_trace_left: 0, cop_log: Vec::new(), s, cpu: Core::new(), cop: Core::new() };
++        let mut m = Machine { watch_on: false, watch_addr: 0, watch_hit: None, watch_regs: [0; 16], watch_stop: true, watch_log: Vec::new(), bp_pc: 0xffff_ffff, bp_mem: Vec::new(), ring: std::collections::VecDeque::new(), bp_hits: Vec::new(), snap_cpu: None, hook_pcs: Vec::new(), hook_log: Vec::new(), hook_peek: None, hook_count: false, hook_counts: std::collections::HashMap::new(), cop_trace_left: 0, cop_log: Vec::new(), s, cpu: Core::new(), cop: Core::new() };
+         m.cpu.cpu.r[13] = 0x4008_0000;
+         m.cop.cpu.r[13] = 0x4008_0000;
+-        let entry = if chip.is_some() { 0 } else { ENTRY };
++        // EMUPOD_ENTRY (hex) overrides the reset pc: the 3G's 2.x osos starts at its first word (0x28000000), not 1.x's 0x2800012c
++        let entry_override = std::env::var("EMUPOD_ENTRY").ok().and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
++        let entry = if chip.is_some() { 0 } else { entry_override.unwrap_or(ENTRY) };
+         m.cpu.cpu.pc = entry;
+         m.cop.cpu.pc = entry;
+         if has_cop && chip.is_some() {
+@@ -1477,7 +1512,11 @@ impl Machine {
+             let mut done = 0u64;
+             while done < count {
+                 let pc = self.cpu.cpu.pc;
+-                if self.hook_pcs.contains(&pc) && self.hook_log.len() < 50_000 {
++                if self.hook_count {
++                    if self.hook_pcs.binary_search(&pc).is_ok() {
++                        *self.hook_counts.entry(pc).or_insert(0) += 1;
++                    }
++                } else if self.hook_log.len() < 50_000 && self.hook_pcs.binary_search(&pc).is_ok() {
+                     let peek = match self.hook_peek {
+                         Some((reg, off)) => { let a = self.cpu.cpu.r[reg].wrapping_add(off); self.s.rd(a, 4) }
+                         None => 0,
+@@ -1707,6 +1746,38 @@ impl Machine {
+         took
+     }
+ 
++    /// (3G study) the drive's interrupt as a level: pending while the drive asserts INTRQ, nIEN (device control bit 1) is clear and the
++    /// line is enabled; taken whenever the CPU has IRQs open. Checked at both ends of a slice, so it also wakes a CPU that went idle
++    /// right after a timer interrupt (the slice start always finds the timer's handler running then).
++    fn ide_line(&mut self) {
++        if self.s.gpio_late && self.cpu.cpu.cpsr & armcore::BIT_I == 0 {
++            self.s.pending = self.s.gpio_en_bit | (self.s.pending & (1 << SIGNAL_IRQ));
++            let took = self.cpu.cpu.irq(&mut self.s);
++            self.s.irqs += took as u64;
++            if took {
++                self.s.gpio_late = false;
++                self.s.slept = false;
++                return;
++            }
++        }
++        if let Some(bit) = self.s.ide_irq {
++            let m = 1u32 << bit;
++            if self.s.ata.intrq && self.s.ata.devctl() & 2 == 0 && self.s.cpu_en & m != 0 {
++                self.s.pending |= m;
++                if self.cpu.cpu.cpsr & armcore::BIT_I == 0 {
++                    let took = self.cpu.cpu.irq(&mut self.s);
++                    self.s.irqs += took as u64;
++                    self.s.ide_irqs += took as u64;
++                    if took {
++                        self.s.slept = false;
++                    }
++                }
++            } else {
++                self.s.pending &= !m;
++            }
++        }
++    }
++
+     /// Deliver the timer tick if one is due and interrupts are enabled.
+     pub fn tick(&mut self) -> bool {
+         if !self.s.tick_due || !self.inject(11) {
+@@ -1785,6 +1856,7 @@ impl Machine {
+                 }
+             }
+         }
++        self.ide_line();
+         if self.s.cfg.irq_mask && self.s.pending & self.s.cpu_en & self.s.gpio_en_bit != 0 && self.cpu.cpu.cpsr & armcore::BIT_I == 0 {
+             let took = self.cpu.cpu.irq(&mut self.s);
+             self.s.irqs += took as u64;
+@@ -1792,6 +1864,7 @@ impl Machine {
+         let ipus = self.s.cfg.ipus;
+         let w0 = if self.watch_on { self.s.rd(self.watch_addr, 4) } else { 0 };
+         self.run_cpu(q * ipus);
++        self.ide_line();
+         if self.watch_on && self.s.rd(self.watch_addr, 4) != w0 {
+             if self.watch_log.len() < 4000 {
+                 let v = self.s.rd(self.watch_addr, 4);
+@@ -1934,7 +2007,7 @@ impl Machine {
+ 
+     /// Run from reset until the first full frame is drawn, then let the menu become input-ready.
+     pub fn boot(&mut self) -> u32 {
+-        self.cpu.cpu.pc = ENTRY;
++        self.cpu.cpu.pc = std::env::var("EMUPOD_ENTRY").ok().and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok()).unwrap_or(ENTRY);
+         for _ in 0..3000 {
+             self.run();
+             if self.s.lcd_count > FRAME - 1 {
+@@ -1976,6 +2049,11 @@ impl Machine {
+             }
+             self.slice();
+         }
++        if self.s.ide_irq.is_some() {
++            // the 3G's idle loop keeps IRQs masked at every point this loop looks: leave it to the end-of-slice check
++            self.s.gpio_late = true;
++            return true;
++        }
+         false
+     }
+ 
+diff --git a/rust/pybind/src/lib.rs b/rust/pybind/src/lib.rs
+index d7089a9..4edfb2f 100644
+--- a/rust/pybind/src/lib.rs
++++ b/rust/pybind/src/lib.rs
+@@ -246,6 +246,7 @@ impl Machine {
+         m.insert("cpu_ipus", s.cfg.ipus);
+         m.insert("cop_ipus", s.cfg.cop_ipus);
+         m.insert("ata_cmds", s.ata.n_cmds);
++        m.insert("ide_irqs", s.ide_irqs);
+         m.insert("ata_reads", s.ata.n_reads);
+         m.insert("ata_writes", s.ata.n_writes);
+         m.insert("ata_sectors_read", s.ata.sectors_read);
+@@ -291,11 +292,19 @@ impl Machine {
+         (self.m.s.ata.power_log.clone(), self.m.s.ata.stalled)
+     }
+     /// (study) log every execution of these CPU addresses as (now_us, pc, [r0..r15], peek); peek_reg/peek_off also record the word at r[peek_reg]+peek_off; read with hook_log. Empty list: off.
+-    #[pyo3(signature = (pcs, peek_reg=None, peek_off=0))]
+-    fn hook_start(&mut self, pcs: Vec<u32>, peek_reg: Option<usize>, peek_off: u32) {
++    #[pyo3(signature = (pcs, peek_reg=None, peek_off=0, count=false))]
++    fn hook_start(&mut self, mut pcs: Vec<u32>, peek_reg: Option<usize>, peek_off: u32, count: bool) {
++        pcs.sort_unstable();
++        pcs.dedup();
+         self.m.hook_peek = peek_reg.map(|r| (r, peek_off));
+         self.m.hook_pcs = pcs;
++        self.m.hook_count = count;
+         self.m.hook_log.clear();
++        self.m.hook_counts.clear();
++    }
++    /// (count mode) {pc: executions} since hook_start.
++    fn hook_counts(&self) -> std::collections::HashMap<u32, u64> {
++        self.m.hook_counts.clone()
+     }
+     fn hook_log(&self) -> Vec<(u64, u32, Vec<u32>, u32)> {
+         self.m.hook_log.iter().map(|(t, pc, r, v)| (*t, *pc, r.to_vec(), *v)).collect()
+diff --git a/tools/synth_card.py b/tools/synth_card.py
+index 131abe3..f739888 100644
+--- a/tools/synth_card.py
++++ b/tools/synth_card.py
+@@ -71,7 +71,7 @@ def main():
+         f.write(mbr)
+         f.seek(FW_START * SECTOR)
+         f.write(fw)
+-    subprocess.run(["/usr/sbin/mkfs.fat", "-F", "32", "-n", "IPOD", "--offset=%d" % data_start, a.out, str((total - data_start) // 2)],
++    subprocess.run(["mkfs.fat", "-F", "32", "-n", "IPOD", "--offset=%d" % data_start, a.out, str((total - data_start) // 2)],
+                    check=True, stdout=subprocess.DEVNULL)
+     print("%s: %d MB, firmware %d bytes at sector %d, FAT32 from sector %d%s" % (
+         a.out, a.mb, len(fw), FW_START, data_start, ", aupd update pending" if a.pending_aupd else ""))

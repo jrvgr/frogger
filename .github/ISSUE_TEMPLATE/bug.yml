@@ -1,0 +1,75 @@
+name: Bug
+description: Something on the iPod (or in the tools) doesn't work as it should
+labels: ["type: bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where it happens. Sets the issue's area label.
+      options:
+        - Now Playing
+        - Hold menu
+        - Queue
+        - Hidden songs
+        - Settings
+        - Playback
+        - Battery
+        - Install
+        - Tools
+        - Emulator
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: From a fresh boot, the buttons you press.
+      placeholder: |
+        1. Music › Songs, play a song
+        2. Hold Select on Now Playing
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: stock
+    attributes:
+      label: With Frogger off
+      description: Boot with Menu held (stock firmware). Does it happen there too?
+      options:
+        - "No, only with Frogger"
+        - "Yes, stock does it too"
+        - "Didn't try"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Frogger version
+      description: The commit you built (`git rev-parse --short HEAD`).
+    validations:
+      required: true
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Storage
+      options:
+        - Hard drive
+        - Flash mod (CF/SD)
+        - Emulator only
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug record
+      description: >
+        For a crash or freeze: build with `make -C loader DEBUG=1`, reproduce, reset (Menu + Play),
+        boot normally and attach `iPod_Control/iTunes/FroggerDebug`. Optional otherwise.

@@ -1,0 +1,77 @@
+name: Labels
+
+# .github/labels.json is the list of labels. Issues get their area label from the form's Area
+# answer; pull requests fail this check until they have one `type:` label and an `area:` one.
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/labels.json]
+  workflow_dispatch:
+  issues:
+    types: [opened, edited]
+  pull_request_target:
+    types: [opened, reopened, edited, labeled, unlabeled, synchronize]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync the labels
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const want = require('./.github/labels.json');
+            const have = await github.paginate(github.rest.issues.listLabelsForRepo, { ...context.repo, per_page: 100 });
+            for (const l of want) {
+              const old = have.find(h => h.name.toLowerCase() === l.name.toLowerCase());
+              if (!old) {
+                await github.rest.issues.createLabel({ ...context.repo, ...l });
+                core.info(`created ${l.name}`);
+              } else if (old.color !== l.color || (old.description || '') !== l.description) {
+                await github.rest.issues.updateLabel({ ...context.repo, name: old.name, color: l.color, description: l.description });
+                core.info(`updated ${l.name}`);
+              }
+            }
+
+  area:
+    name: Area label from the issue form
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const m = /### Area\s+([^\n]+)/.exec(issue.body || '');
+            if (!m) return;
+            const label = 'area: ' + m[1].trim().toLowerCase();
+            const labels = issue.labels.map(l => l.name);
+            for (const old of labels.filter(n => n.startsWith('area: ') && n !== label))
+              await github.rest.issues.removeLabel({ ...context.repo, issue_number: issue.number, name: old });
+            if (!labels.includes(label))
+              await github.rest.issues.addLabels({ ...context.repo, issue_number: issue.number, labels: [label] });
+
+  pr:
+    name: PR has a type and an area label
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const names = context.payload.pull_request.labels.map(l => l.name);
+            const types = names.filter(n => n.startsWith('type: '));
+            const areas = names.filter(n => n.startsWith('area: '));
+            if (types.length !== 1 || areas.length < 1)
+              core.setFailed(`Needs exactly one "type:" label (has ${types.length}) and at least one "area:" label ` +
+                             `(has ${areas.length}). The list is in .github/labels.json.`);

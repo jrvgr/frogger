@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+      - name: Build the loader and payload
+        run: nix develop -c make -C loader
+      - name: Unit tests (the ones that need Apple's firmware skip)
+        run: nix develop -c python3 -m unittest discover -s tests -v
+
+  emulator:
+    name: Firmware and emulator tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: cachix/install-nix-action@v30
+      # Apple's firmware is never in this repo: it's fetched from Apple and checked.
+      - name: Firmware 2.3 from Apple
+        run: |
+          mkdir -p firmware
+          curl -fsSL -o firmware/iPod_2.2.3.ipsw \
+            https://secure-appldnld.apple.com/iPod/SBML/osx/bundles/061-2687.20060912.IPwdC/iPod_2.2.3.ipsw
+          echo "bec081f2bacd4099dcfc533048a6844c8fafb50197c60d9d7ef95075cf2c6e92  firmware/iPod_2.2.3.ipsw" | sha256sum -c
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            third_party/emupod/rust/target
+          key: emupod-${{ runner.os }}-${{ hashFiles('tools/emupod/emupod-gen3.patch', '.gitmodules') }}
+      - name: emupod (patched, built)
+        run: nix develop .#emu -c tools/emupod/setup.sh
+      - name: Build
+        run: |
+          nix develop .#emu -c python3 tools/fwtool.py extract firmware/iPod_2.2.3.ipsw -o build/fw
+          nix develop .#emu -c make -C loader
+      - name: Unit tests, all
+        run: nix develop .#emu -c python3 -m unittest discover -s tests -v
+      - name: Test cards
+        run: nix develop .#emu -c python3 tools/emupod/mkcards.py
+      - name: Emulator tests
+        run: nix develop .#emu -c python3 tools/emupod/runtests.py -j 4
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: emupod-logs
+          path: |
+            build/emupod-work/logs
+            build/emupod-work/*.png

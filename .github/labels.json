@@ -1,0 +1,87 @@
+[
+  {
+    "name": "type: bug",
+    "color": "d73a4a",
+    "description": "Something doesn't work as it should"
+  },
+  {
+    "name": "type: feature",
+    "color": "0e8a16",
+    "description": "A new feature, or a change to one"
+  },
+  {
+    "name": "type: docs",
+    "color": "0075ca",
+    "description": "README, docs/, comments"
+  },
+  {
+    "name": "type: chore",
+    "color": "c5def5",
+    "description": "Tests, CI, tooling, cleanup: no change on the iPod"
+  },
+  {
+    "name": "area: now playing",
+    "color": "fbca04",
+    "description": "Cover page, covers (FroggerArt), the slide"
+  },
+  {
+    "name": "area: hold menu",
+    "color": "fbca04",
+    "description": "Hold menu, Go to, Play Album Next, Add to Playlist"
+  },
+  {
+    "name": "area: queue",
+    "color": "fbca04",
+    "description": "Add to Queue, Up Next, the main menu's Queue row"
+  },
+  {
+    "name": "area: hidden songs",
+    "color": "fbca04",
+    "description": "Hide, Show, Show Hidden, FroggerHidden"
+  },
+  {
+    "name": "area: settings",
+    "color": "fbca04",
+    "description": "Settings rows, quick settings, the feature switches"
+  },
+  {
+    "name": "area: playback",
+    "color": "fbca04",
+    "description": "Resume mixes, skip counts, album artists"
+  },
+  {
+    "name": "area: battery",
+    "color": "fbca04",
+    "description": "Battery percentage"
+  },
+  {
+    "name": "area: install",
+    "color": "fbca04",
+    "description": "Loader, install.py, backups, getting back to stock"
+  },
+  {
+    "name": "area: tools",
+    "color": "fbca04",
+    "description": "podinfo.py, fwtool.py, reverse-engineering helpers"
+  },
+  {
+    "name": "area: emulator",
+    "color": "fbca04",
+    "description": "emupod, test cards, emulator tests, CI"
+  },
+  {
+    "name": "needs device test",
+    "color": "5319e7",
+    "description": "Works in the emulator, not yet tried on a real 3G"
+  },
+  {
+    "name": "needs info",
+    "color": "bfd4f2",
+    "description": "Waiting for details from whoever opened it"
+  },
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Small and well understood"
+  }
+]

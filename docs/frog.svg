@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-24 -24 248 218" width="160" height="141">
+  <!-- Crate's frog sticker (FrogSticker in Crate's IPodArt.swift), the same shapes -->
+  <defs>
+    <linearGradient id="skin" x1="0" y1="14" x2="0" y2="156" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9ee675"/>
+      <stop offset="1" stop-color="#75cc5c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <g id="face">
+      <ellipse cx="100" cy="106.3" rx="86" ry="49.7"/>
+      <ellipse cx="58.72" cy="48.08" rx="34.4" ry="31.24"/>
+      <ellipse cx="141.28" cy="48.08" rx="34.4" ry="31.24"/>
+    </g>
+  </defs>
+  <g transform="rotate(-12 100 85)" filter="url(#shadow)">
+    <use href="#face" fill="#fff" stroke="#fff" stroke-width="28" stroke-linejoin="round"/>
+    <use href="#face" fill="url(#skin)"/>
+    <ellipse cx="58.72" cy="46.66" rx="22.36" ry="21.3" fill="#fff"/>
+    <ellipse cx="141.28" cy="46.66" rx="22.36" ry="21.3" fill="#fff"/>
+    <ellipse cx="58.72" cy="47.37" rx="12.04" ry="12.07" fill="#1a1a1a"/>
+    <ellipse cx="141.28" cy="47.37" rx="12.04" ry="12.07" fill="#1a1a1a"/>
+    <ellipse cx="57" cy="40.98" rx="4.3" ry="4.26" fill="#fff"/>
+    <ellipse cx="139.56" cy="40.98" rx="4.3" ry="4.26" fill="#fff"/>
+    <ellipse cx="43.24" cy="111.98" rx="13.76" ry="7.1" fill="#ff2d55" fill-opacity="0.6"/>
+    <ellipse cx="156.76" cy="111.98" rx="13.76" ry="7.1" fill="#ff2d55" fill-opacity="0.6"/>
+    <path d="M75.92 107.72 Q100 127.6 124.08 107.72" fill="none" stroke="#2e6b33" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>

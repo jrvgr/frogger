@@ -1,0 +1,9 @@
+*.ipsw
+*.bin
+firmware/
+backups/
+.direnv/
+result
+build/
+__pycache__/
+.DS_Store

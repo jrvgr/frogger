@@ -1,0 +1,43 @@
+name: Feature
+description: A new feature, or a change to one
+labels: ["type: feature"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where it belongs. Sets the issue's area label.
+      options:
+        - Now Playing
+        - Hold menu
+        - Queue
+        - Hidden songs
+        - Settings
+        - Playback
+        - Battery
+        - Install
+        - Tools
+        - Emulator
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What it should do
+      description: On the iPod, step by step, as you'd use it.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it's for, and what you do now instead.
+    validations:
+      required: true
+  - type: textarea
+    id: stock
+    attributes:
+      label: Apple's firmware
+      description: >
+        Anything you know about how 2.3 does something close (a screen, a setting, a function in
+        docs/addresses.md). Optional.
