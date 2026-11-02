@@ -34,7 +34,8 @@ import struct
 import sys
 
 HIDE_OFFSET, HIDE_MAGIC = 0x98, b"HIDE"
-MHOD_TITLE, MHOD_ALBUM, MHOD_ARTIST = 1, 3, 4
+MHOD_TITLE, MHOD_LOCATION, MHOD_ALBUM, MHOD_ARTIST = 1, 2, 3, 4
+FIELDS = {MHOD_TITLE: "title", MHOD_LOCATION: "location", MHOD_ALBUM: "album", MHOD_ARTIST: "artist"}
 RESUME_MIN_MS = 20 * 60 * 1000          # Frogger bookmarks songs this long (payload/resume.h)
 MAC_EPOCH = datetime.datetime(1904, 1, 1)
 
@@ -48,7 +49,7 @@ class Track:
     def __init__(self, pos, offset, tid, ms, bookmark, hidden, header):
         self.pos, self.offset, self.id, self.ms = pos, offset, tid, ms
         self.bookmark, self.hidden, self.header = bookmark, hidden, header
-        self.title = self.artist = self.album = ""
+        self.title = self.artist = self.album = self.location = ""     # location: ":iPod_Control:Music:F00:X.mp3"
 
 
 class Database:
@@ -85,10 +86,10 @@ class Database:
             m = off + hlen
             for _ in range(nmhod):
                 mh, mtotal, kind = struct.unpack_from("<III", d, m + 4)
-                if kind in (MHOD_TITLE, MHOD_ALBUM, MHOD_ARTIST):
+                if kind in FIELDS:
                     length = struct.unpack_from("<I", d, m + mh + 4)[0]
                     s = d[m + mh + 16:m + mh + 16 + length].decode("utf-16-le", "replace")
-                    setattr(t, {MHOD_TITLE: "title", MHOD_ALBUM: "album", MHOD_ARTIST: "artist"}[kind], s)
+                    setattr(t, FIELDS[kind], s)
                 m += mtotal
             self.tracks.append(t)
             off += total
@@ -168,7 +169,7 @@ def show_summary(root, db):
         print("FroggerArt\t%d covers for %d tracks%s" % (images, positions, "" if ok else
                                                        " (not for this database: Now Playing shows the frame)"))
     else:
-        print("FroggerArt\tnone (Now Playing shows the frame; Crate writes it, tools/emupod/mkart.py makes test pictures)")
+        print("FroggerArt\tnone (Now Playing shows the frame; Crate or tools/coverart.py writes it)")
 
 
 def show_tracks(db):

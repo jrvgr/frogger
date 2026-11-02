@@ -5,7 +5,7 @@ Select cycles **cover art → Apple's page → scrubbing → rating → cover ar
 the title alone on top, no title bar). Status labels as in `re-notes.md`. Tools are in
 `tools/emupod/` (see its README); the UI bytecode is in `docs/tcmd.md`.
 
-**Status (2026-10-28): works in emupod and on a real 3G** (covers switch cleanly on Next). Since 2026-11-02 (emupod; not yet on the device) the page switches slide like Apple's screens (below, "The slide"). Now Playing opens on the cover
+**Status: works in emupod and on a real 3G** (covers switch cleanly on Next). The page switches slide like Apple's screens (below, "The slide"); that part is tested in emupod, not yet on a device. Now Playing opens on the cover
 page (title on top, no title bar, the 72×72 cover, the progress bar and times); Select goes to
 Apple's page, then Apple's scrubbing and rating; the third Select, Select after a scrub or the 5 s
 timeout brings the cover page back. Transitions are drawn in the same frame as the key, except that the rating dots
@@ -64,8 +64,7 @@ changes what the bar area shows (`0x08de.method_6a(…, 0x57/0x58, …)`):
 
 So the cycle has three ways back to normal: Select while rating (fn 183), Select after a scrub
 (fn 172's call of fn 170, `NP_FN_SCRUBBED`) and the 5 s timeout (fn 173). Each brings the cover
-page back. (Before 2026-10-29 only the first and last did, so Select after a scrub left Apple's
-page up; `tools/emupod/npscrub.py`.)
+page back (`tools/emupod/npscrub.py` checks Select after a scrub).
 
 ## How the pages work (**confirmed** in emupod; `payload/nowplaying.c`)
 
@@ -194,7 +193,7 @@ Apple's page, and the cover page is made at runtime by changing the live objects
   `play_hook` replaces the call at `0xb916c` (`bl 0xbca48`), notes that track, then continues into
   `0xbca48`. The cover itself is read on the UI's side, at the next bytecode instruction
   (`np_vm` → `np_art_update`): when a song ends by itself `play_hook` runs on the playback side,
-  and reading the card there froze a device (2026-10-29, on a CF-to-SD adapter) at the second
+  and reading the card there froze a device (on a CF-to-SD adapter) at the second
   song, with covers broken until a restart. An album's next song doesn't read its image again,
   and a failed read shows the frame and is tried again when Now Playing next opens.
 - **The "no cover" frame** has a pixel frog in the middle (`art.c`, `art_none`). When the song

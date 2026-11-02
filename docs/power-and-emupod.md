@@ -2,157 +2,82 @@
 
 Image: `build/fw/osos.img` (2.3, linked at base 0). Disassembly made with
 `nix develop -c arm-none-eabi-objdump -D -b binary -m arm build/fw/osos.img`.
-Nothing was committed or pushed, and nothing was written to the iPod.
 
 Status labels follow re-notes.md: **confirmed** (read from the instructions),
 **likely**, **guess**.
 
-## Part A: emupod gen3 boot (run 2026-10-28, after the module was built)
+## Part A: emupod gen3
 
-Result: **2.3 boots into the OS and initialises the LCD, then stalls at 2.407 s waiting for the IDE
-interrupt after the second IDENTIFY DEVICE. Blank screen, no disk reads.**
+All gen3 core changes are in one diff, `tools/emupod/emupod-gen3.patch` (`rust/pp5002/src/lib.rs`,
+`ata.rs`, `rust/pybind/src/lib.rs`), applied to the clone in `build/emupod/rust`. All are opt-in via
+environment variables; 1G/2G are unchanged. Run with `EMUPOD_ENTRY=0x28000000 EMUPOD_IDE_IRQ=1`.
 
-How it was run (scratch only; nothing in the repo or on the iPod changed):
-
-- Disk: `build/emupod-work/gen3-card.img`, 256 MB, made by emupod's `tools/synth_card.py` from
-  `iPod_2.2.3.ipsw` (MBR, firmware partition at sector 63, empty FAT32). The script was copied to the
-  scratchpad, with `mkfs.fat` from `nixpkgs#dosfstools`.
-- Driven through `emupod.emu` / `emupod_rs.Machine` directly. I did not call `boot()`, which forces the
-  1G entry pc, and drove the clock with `run_for()` instead. The `paths.py` gen3 guard only affects
-  the CLI, so it did not need a bypass.
-- Three things had to change for gen3, all in scratch copies:
-  1. **Reset entry.** The core starts both cores at the 1.x reset pc `0x2800012c`, which in 2.3 is
-     inside the IRQ handler, so the COP never slept ("coprocessor did not put itself to sleep at
-     reset: pc 0x40010004"). I patched `rust/pp5002/src/lib.rs` in the scratch clone to read
-     `EMUPOD_ENTRY`, and set it to `0x28000000`. Note that `Machine::boot()` still resets the pc to
-     the 1.x entry (`lib.rs:1939`), so do not call it for gen3.
-  2. **PLL registers.** The 2.3 clock code `0x12eefc` divides by the low byte of `0xcf005018` and
-     multiplies by `0xcf00501c`. emupod returns 0 for both, so it divided by zero → `__rt_raise(SIGFPE=2)`
-     → handler 0 → jump to 0 → reset loop. I fixed this in a **patched osos copy**,
-     `build/emupod-work/osos-emu.img`: `0x12ef24 and r0,#0xff` → `mov r0,#1`, and
-     `0x12ef30 and r2,#0xff` → `mov r2,#3`. The real fix is for the core to model
-     `0xcf005018`/`0xcf00501c`.
-  3. With both changes it boots into the scheduler `0xc3170`.
-
-What happens in 30 emulated seconds:
-
-| | |
-|---|---|
-| LCD writes | **74** (controller init only). `build/emupod-work/lcd.png` is blank |
-| Faults | none seen; the Rust core has no `events("fault")`, but the CPU stays in the OS idle loop |
-| CPU pc | `0x2f36c` (the CPU idle sleep: `CPU_CTL 0xcf004054 = 0xca`), 892,851 sleeps; from about 23 s, sampled at `0x12d774` (`is_cpu()` return), still idle |
-| COP | asleep at `0x2f38c` (`COP_CTL = 0xca`), woken 1,360 times |
-| IRQs / ticks | 1,598 IRQs, 1,580 timer ticks: the scheduler is alive |
-| IRQ enable | CPU writes `0xcf001024 = 0x405808` at 156 ms, then `0x4000`, `0x80`, `0x4` |
-| ATA log | 2.4059 s **0x90** EXECUTE DIAGNOSTIC; 2.4059 s **0xEC** IDENTIFY (polled, DRQ 0x48, 256 data reads); 2.4061 s **0xEF** SET FEATURES sub 3 count 8; the driver then writes devctl = 0 (nIEN off) and `0xc0003024 = 0x50`/`0x40`; 2.4071 s **0xEC** IDENTIFY again, issued by `0x1416f0` on a heap ATA object `0x1fd44dc`. **After this, nothing.** |
-| Disk reads | 0 sectors |
-| Hooks | `0x9439c` (boot spin-up wait) hit at 2.40 s with `n = 0x2c4020` (29 s = 31 s − 2 s uptime: confirms the static reading); `0x1416f0` once; `0xe0078`, `0x134c58`, `0xdf014`, `0xdf700`, `0x45924` never |
-
-**Stall:** the interrupt-driven IDENTIFY at 2.407 s waits for an IDE completion interrupt. The emupod
-core models INTRQ only as a latch bit in `0xc0003024` (bit 4), only for machines booting from a
-flash chip (`lib.rs:569`), and never raises an interrupt-controller line for the disk. 1.x and the
-disk-mode program poll; the 2.3 driver sleeps until the interrupt. The last MMIO it touches are
-`0xc0003024` (IDE config, read 0x40) and `0xc00031fc`/`0xc00033f8` (status 0x40); after that only
-the timer and interrupt registers.
-
-To get further, the core needs to: (a) return bit 4 of `0xc0003024` for DRAM-boot machines too,
-(b) raise the IDE IRQ in `0xcf001000..` when `intrq` sets (the line number has to be found: one of
-the bits in the 2.3 enable mask `0x405808`/`0x80`/`0x4`), and (c) model `0xcf005018`/`0xcf00501c`.
-Only then can the idle-timeout and read-ahead hooks fire.
-
-## Part A, round 2: IDE interrupt + clock model (2026-10-28)
-
-Core changes in the scratch clone (`build/emupod/rust`, all opt-in via environment variables;
-1G/2G unchanged): `EMUPOD_ENTRY` (reset pc, now also honoured by `boot()`); `EMUPOD_IDE_IRQ=<bit>`
-(the drive's INTRQ as a level on that interrupt-controller line, cleared by a status-register
-read or by the `0xc0003024` bit-4 ack, and `0xc0003024` bit 4 now reflects INTRQ for DRAM boots);
-the clock block `0xcf005000..0x3c` stored, with defaults `0x18 = 1`, `0x1c = 3`. With these the
-**stock** `build/fw/osos.img` boots, so the `osos-emu.img` patch is no longer needed.
+- **Reset entry** (`EMUPOD_ENTRY`, also honoured by `boot()`). The core's default 1.x reset pc
+  `0x2800012c` is inside the 2.3 IRQ handler, so the COP never sleeps ("coprocessor did not put
+  itself to sleep at reset: pc 0x40010004"). 2.3 needs `0x28000000`.
+- **Clock block** `0xcf005000..0x3c` stored, with defaults `0x18 = 1`, `0x1c = 3`. The 2.3 clock code
+  `0x12eefc` divides by the low byte of `0xcf005018` and multiplies by `0xcf00501c`; with both 0 it
+  divides by zero → `__rt_raise(SIGFPE=2)` → handler 0 → jump to 0 → reset loop. (Without the model,
+  patching `0x12ef24 and r0,#0xff` → `mov r0,#1` and `0x12ef30 and r2,#0xff` → `mov r2,#3` also works.)
+- **IDE interrupt** (`EMUPOD_IDE_IRQ=<bit>`): the drive's INTRQ as a level on that
+  interrupt-controller line, cleared by a status-register read or by the `0xc0003024` bit-4 ack;
+  `0xc0003024` bit 4 reflects INTRQ for DRAM boots too. `Machine::ide_line()` also offers the IRQ
+  after each `run_cpu`, which wakes an idle CPU (while the CPU idles, every slice starts inside the
+  timer ISR with I set). Key edges use the same mechanism (`gpio_late`; only with `EMUPOD_IDE_IRQ`).
+  Without this, 2.3 stalls at 2.407 s: the 1.x and disk-mode code poll, but the 2.3 driver sleeps
+  until the interrupt after the second IDENTIFY.
+- The `paths.py` gen3 guard only affects the CLI. The Rust core has no `events("fault")`.
 
 **IDE IRQ line: bit 1** (**confirmed** by the trace). The ATA driver brackets every command with
 `0xcf001028 = 0x2` / `0xcf001024 = 0x2`, and its ISR reads `0xcf001000 = 0x2`, reads `0xc0003024`
 (0x5c), acks with `0xc0003024 = 0x58`, then reads status. Bit 1 is not one of the named
 branches in the dispatcher `0x1282ac`; it is handled on the default path (`0x13ddc0`/`0x1349a8`).
-Bit 3 (`0x13f090`) is something else. My first guess, 3, was wrong.
+Bit 3 (`0x13f090`) is something else.
 
-Result with `EMUPOD_ENTRY=0x28000000 EMUPOD_IDE_IRQ=1`, 45 emulated seconds:
+Test cards (scratch):
 
-- **Reaches the UI**: 8,631 LCD writes; the screen shows the first-run **Language** menu (the
-  synthetic card has no settings and no iTunesDB). The first full screen appears at about 26.6 s.
-  PNG: `build/emupod-work/lcd.png`.
-- ATA: 13 commands, 9 IDE interrupts, **8 sectors read**, all single-sector:
-  READ SECTORS `0x20` (builder `0xdf700`) at LBA 0, 0, 0, 0x3f, 0x1003f, 0x10040, 0x11bf1
-  (MBR, firmware partition, FAT32 boot sector/FSInfo/FAT), SET MULTIPLE `0xC6`, then
-  READ MULTIPLE `0xC4` (builder `0xdf014`) at LBA 0x11bf1, count 1, at 2.567 s.
-- **That READ MULTIPLE never completes in the emulator**: its interrupt is pending (`irq_pending = 2`)
-  but is never delivered, because my line model only offered the IRQ at the start of a slice, and
-  while the CPU idles every slice starts inside the timer ISR (I flag set). The earlier reads
-  worked only because the CPU was busy-waiting. This is a bug in my model, not a missing
-  peripheral. A fix is written (`ide_line()`, also checked after `run_cpu`, and it wakes an idle
-  CPU) and needs one more rebuild.
-- **Spin-down path, observed:** disk-power messages (type 14) reach `0x134bc8` at 2.555 s, then
-  repeatedly at 22.996–23.05 s and 26.61/26.70 s (sub-op 4 → op `0xFC` per unit). At **25.68 s and
-  28.75 s** case 2 runs: `0x134c58` sees unit 0 (the ATA object `0x418b9c`) in state 6 and sends op
-  `0xE0`, then `0xFD`, through `0x9e83c` → `0x9da1c` (on the per-drive object `0x1fd44dc`).
-  STANDBY IMMEDIATE itself is **not** sent. `0x9da1c` first runs the "re-init after wake" path
-  `0xc347c` (because `obj+0x1e0` is set), whose BSY/DRQ check (`0x13f9c4`, 30 × 10 µs) fails, since
-  the stuck READ MULTIPLE leaves DRQ set. So it returns `0x400` before reaching the builder
-  `0xe0078`.
-- **Idle timeout: provisional, ~23 s.** The first spin-down attempt (25.68 s) comes 23.1 s after
-  the last disk command (2.567 s). The next is 3.07 s later (28.75 s, probably a retry after the
-  failure). Because the last read never completed and the UI only appeared at about 26.6 s, this is not
-  a clean measurement yet. Rerun after the `ide_line()` fix to confirm.
-- **Read size per wake:** not measurable yet (no iTunesDB or music on the synthetic card, and
-  the read path stalls). Needs the fix plus a card with music.
+- `build/emupod-work/gen3-card.img`, 256 MB, made by emupod's `tools/synth_card.py` from
+  `iPod_2.2.3.ipsw` (MBR, firmware partition at sector 63, empty FAT32), with `mkfs.fat` from
+  `nixpkgs#dosfstools`. Boots to the first-run **Language** menu (no settings, no iTunesDB).
+- `build/emupod-work/music-card.img`: the same plus `iPod_Control/iTunes/iTunesDB`, a minimal mhbd v9
+  (2 tracks + master playlist) written by `tools/emupod/mkcards.py` with the repo's mhod layout, and
+  two sine-tone MP3s made with `nix shell nixpkgs#sox nixpkgs#lame`: `TONEA.mp3` (3 min, 128 kbps,
+  2.9 MB) and `TONEB.mp3` (12 min, 320 kbps, 28.8 MB, bigger than the about 26.8 MiB music cache, so a
+  full play shows more than one wake). Files copied in with `nix shell nixpkgs#mtools`.
 
-## Part A, round 3: idle-IRQ fix, clean idle timeout, music card (2026-10-28)
+Boot, as observed:
 
-Core fix (scratch clone, built by me this time): the drive's IRQ is also offered after each
-`run_cpu`, which wakes an idle CPU (`Machine::ide_line()`). The same mechanism delivers a key edge
-that `edge()` could not deliver at once (`gpio_late`; only with `EMUPOD_IDE_IRQ` set).
+- CPU idle pc `0x2f36c` (CPU idle sleep: `CPU_CTL 0xcf004054 = 0xca`); COP asleep at `0x2f38c`
+  (`COP_CTL = 0xca`). The CPU writes the IRQ enable `0xcf001024 = 0x405808` at 156 ms, then
+  `0x4000`, `0x80`, `0x4`.
+- ATA bring-up: **0x90** EXECUTE DIAGNOSTIC; **0xEC** IDENTIFY (polled, DRQ 0x48, 256 data reads);
+  **0xEF** SET FEATURES sub 3 count 8; devctl = 0 (nIEN off) and `0xc0003024 = 0x50`/`0x40`; then
+  **0xEC** IDENTIFY again, interrupt-driven, issued by `0x1416f0` on a heap ATA object `0x1fd44dc`.
+- `0x9439c` (boot spin-up wait) is hit at 2.40 s with `n = 0x2c4020` (29 s = 31 s − 2 s uptime,
+  matching the static reading).
+- First reads: READ SECTORS `0x20` (builder `0xdf700`) at LBA 0, 0, 0, 0x3f, 0x1003f, 0x10040, 0x11bf1
+  (MBR, firmware partition, FAT32 boot sector/FSInfo/FAT), SET MULTIPLE `0xC6`, then single-sector
+  READ MULTIPLE `0xC4` (builder `0xdf014`).
+- Empty card: UI up at 7.7 s; 172 ATA commands, 169 IDE IRQs, 119 sectors read (all single-sector
+  READ MULTIPLE), plus 47 single-sector WRITE MULTIPLE `0xC5` around 3.7–3.96 s (settings/FAT
+  updates on the fresh card).
 
-**Disk idle timeout: 12.8 s (confirmed in emulation, stock 2.3, empty card).**
+**Disk idle timeout: 12.8 s (confirmed in emulation, stock 2.3, empty card).** Last disk command:
+a read at 8.1025 s. **STANDBY IMMEDIATE `0xE0` reaches the drive at 20.9334 s** (`0x134c58` →
+`0x9e83c` → `0x9da1c` → `0x9db0c` → builder `0xe0078`; emupod's power log marks the drive powered
+down): 12.83 s after the last access. The disk-power messages (type 14, sub-op 4 → op `0xFC` per
+unit) are per-access notifications; the last one is 12.81 s before the standby. No literal
+constant for it (no 1280/12800/12.8e6 near the power code); it is probably computed or counted
+in ticks. `0x9da1c` first runs the "re-init after wake" path `0xc347c` when `obj+0x1e0` is set;
+if its BSY/DRQ check (`0x13f9c4`, 30 × 10 µs) fails, it returns `0x400` before reaching `0xe0078`.
 
-- The boot reads finish and the UI is up at 7.7 s. 172 ATA commands and 169 IDE IRQs; 119 sectors read,
-  all single-sector READ MULTIPLE `0xC4` (builder `0xdf014`), plus 47 single-sector WRITE MULTIPLE `0xC5`
-  around 3.7–3.96 s (settings/FAT updates on the fresh card).
-- Last disk command: a read at **8.1025 s**. **STANDBY IMMEDIATE `0xE0` reaches the drive at
-  20.9334 s** (`0x134c58` → `0x9e83c` → `0x9da1c` → `0x9db0c` → builder `0xe0078`; emupod's power log
-  marks the drive powered down). Timeout = **12.83 s** after the last access. The disk-power
-  messages (sub-op 4 → op `0xFC`) at 3.03–8.12 s are per-access notifications; the last one is at
-  8.1199 s, which is 12.81 s before the standby. I did not find a literal constant for it (no
-  1280/12800/12.8e6 near the power code); it is probably computed or counted in ticks.
-- Round 2's "~23 s" was wrong: that run had the stuck read.
+Keys and screen:
 
-**Test card with music:** `build/emupod-work/music-card.img` (scratch). The synthetic 256 MB card
-plus `iPod_Control/iTunes/iTunesDB`, a minimal mhbd v9 (2 tracks + master playlist) written by
-`tools/emupod/mkcards.py` with the repo's mhod layout, and two sine-tone MP3s made with
-`nix shell nixpkgs#sox nixpkgs#lame`: `TONEA.mp3` (3 min, 128 kbps, 2.9 MB) and `TONEB.mp3`
-(12 min, 320 kbps, 28.8 MB, bigger than the about 26.8 MiB music cache, so a full play would show
-more than one wake). Files copied in with `nix shell nixpkgs#mtools`.
-
-**Playing a song: not reached.** Two input problems:
-
-1. Hold: ~~on the 3G, GPIOA bit 5 low = Hold on~~ **wrong, see round 4**: stock 2.3 reads bit 5
-   **high** as Hold on, so setting it high is what made every key get dropped. Leave it low.
-2. Key edges: like the disk IRQ, `edge()` only offered the GPIO IRQ (bit 14) while 2.3's idle
-   loop had IRQs masked. Fixed (`gpio_late`). Now the GPIO ISR `0x124cd8` runs, reads
-   `0xcf000040 = 0x2`, flips `0xcf000060`, acks `0xcf000070` and reads GPIOA input `0x3d`
-   (Select down) and then `0x3f` (up). **But the Language menu does not react** (LCD count unchanged
-   after Select). Not traced yet. The next step is to follow the handlers registered at
-   `0x420ae8` (called through `0x8a1f0`) and find which task consumes the key event. The 3G's
-   button handling may also want the touch wheel or a held key polled by a timer.
-
-So the read size per disk wake is still open. The static answer from B.3 stands: refill when
-less than 20 s of audio is cached, and the cache is the heap.
-
-## Part A, round 4: keys and wheel work (2026-10-28)
-
-No core changes. The only blocker was Hold: `0xbe110` (where every button ends up) returns early
-when `0x7a9b8` says Hold is on, and that compares GPIOA bit 5 with a fixed level 1. With bit 5
-**low**, Select on the Language menu goes to the main menu, and the wheel, Menu and Play work too.
-The full button, event and code map is in `docs/re-notes.md` (Key input).
-
+- **Hold**: `0xbe110` (where every button ends up) returns early when `0x7a9b8` says Hold is on,
+  which compares GPIOA bit 5 with a fixed level 1. Bit 5 **high** = Hold on, so keep it **low**.
+  The full button, event and code map is in `docs/re-notes.md` (Key input).
+- Key edges: GPIO IRQ bit 14. The GPIO ISR `0x124cd8` reads `0xcf000040 = 0x2`, flips
+  `0xcf000060`, acks `0xcf000070` and reads GPIOA input (`0x3d` Select down, `0x3f` up).
 - Wheel: GPIOA bits 7:6 are a quadrature pair (event `0x71`, decoder `0x90c94`). One menu item
   takes 4 to 6 steps.
 - Screenshots: `e.lcd.make_screen()` starts blank and only fills in if there were LCD writes since
@@ -160,9 +85,15 @@ The full button, event and code map is in `docs/re-notes.md` (Key input).
   instead.
 - Driver: `build/emupod-work/scripts/ipod3g.py` (`Pod().press("select")`, `.scroll(n)`,
   `.shot(...)`). Run it with plain `python3` from that folder; `-I` hides the module.
-- With it, Music › Songs lists "Tone A" and "Tone B long" from the test card, and Select on a song
-  starts playback (▶ in the title bar). The read size per disk wake can now be measured by playing
-  TONEB.
+- With the music card, Music › Songs lists "Tone A" and "Tone B long", and Select on a song
+  starts playback (▶ in the title bar).
+
+**Read size per disk wake: not measured yet.** Play TONEB and log READs per wake. There is no
+callable "play track" entry known: `0x54de4` (allocates a 0x424-byte per-track cache object and
+links it into the cache; called from `0x999ac` and `0xe4bc8`, i.e. player/database setup) and
+`0x94918` (the playback tick that calls the refill check `0x45760`) need the playback controller's
+state, which is not mapped (strings `Now Playing` at `0x18fde0`/`0x190818` and `NowPlayingMode`
+at `0x3074b0` are the way in). The static answer from B.3 stands.
 
 ## Part B: disk power and audio buffer in 2.3 osos
 
@@ -258,20 +189,21 @@ It is likely the boot or disk-mode low-level path (**likely**). The IDE FIFO cop
 
 ### B.2 Disk idle timeout and drive power GPIO
 
-- **Idle timeout: NOT FOUND within the timebox.** What is known (**confirmed**): the drive's own
-  standby timer is turned off (IDLE `0xE3` with count 0, `0xdebac`), so the timeout lives in osos.
-  It works by posting message type 14, sub-op 2, to the disk-power task (`0x13bc2c`).
-  `0xfac38`'s direct callers send sub-ops 9 (`0x9b964`), 8 (`0xb266c`) and 5, but not 2. So the
-  sub-op 2 message is built inline somewhere else, probably by a timer callback. Next step:
-  find stores of `#2` to `[msg,#24]` near a `strb #14,[msg,#20]`, or hook `0x134c58` in Unicorn and
-  backtrace. **guess**: the value is a few seconds to tens of seconds, kept in a settings word
-  next to the power-state table at `0x3702a0` / `0x422080`.
+- **Idle timeout: 12.8 s** (measured in emulation, Part A); its code is not located. Known
+  (**confirmed**): the drive's own standby timer is turned off (IDLE `0xE3` with count 0, `0xdebac`),
+  so the timeout lives in osos. It works by posting message type 14, sub-op 2, to the disk-power
+  task (`0x13bc2c`). `0xfac38` is the only type-14 message builder (every function scanned for an
+  immediate 14 stored to `+0x14`: only `0xfac38` and the receiver `0x134d3c`), and its direct callers
+  send sub-ops 9 (`0x9b964`), 8 (`0xb266c`) and 5, but not 2. So the sub-op 2 message is built inline
+  somewhere else, probably by a timer callback. To find it: stores of `#2` to `[msg,#24]` near a
+  `strb #14,[msg,#20]`, or hook `0x134c58` and backtrace. **guess**: kept in a settings word next to
+  the power-state table at `0x3702a0` / `0x422080`.
 - **Drive power GPIO: none found** (**likely**). No store to GPIO output registers
   (`0xcf000020..2c` / `0xcf000060..6c`) sits on the ATA or power paths. The only direct GPIO
-  output write I found, `0x13fd30` → `0xcf000028` and onward to `0x13fe30`/`0x140614`, is the
+  output write, `0x13fd30` → `0xcf000028` and onward to `0x13fe30`/`0x140614`, is the
   audio codec. Rockbox's ipod `ide_power_enable` is also a no-op, which fits a drive that
   is only ever put to sleep with STANDBY IMMEDIATE and never has its power cut. A power-off
-  would have to come from the PMU or a hard power-down, which I did not check.
+  would have to come from the PMU or a hard power-down (not checked).
 
 ### B.3 Audio read-ahead (track cache)
 
@@ -300,12 +232,11 @@ It is likely the boot or disk-mode low-level path (**likely**). The IDE FIFO cop
 - **Read-ahead size per disk wake: NOT FOUND.** **guess**: the task fills as much of the
   heap-backed cache as it can (the heap is about 26.8 MiB on a 32 MiB unit), so the amount is
   bounded by free cache space rather than by a fixed constant. That fits Apple's "20 minutes of
-  skip protection" marketing. Still open from the original note: The task has no size
-  constants of its own. They will be in the code that sizes cache segments from the heap
-  (`0x33500` probes DRAM; the heap is `0x453c304` (uncached alias) up to
-  `0x4346364 & ~0xfc000000`-based top, stored at `heap+0x14/+0x18`). Next step: xref `0x439bf0`
-  and `cache+0xb5c` writers, and look for the free-space or "remaining ms" compare that signals
-  `0x439c10`.
+  skip protection" marketing. The task has no size constants of its own. They will be in the
+  code that sizes cache segments from the heap (`0x33500` probes DRAM; the heap is `0x453c304`
+  (uncached alias) up to `0x4346364 & ~0xfc000000`-based top, stored at `heap+0x14/+0x18`).
+  To find it: xref `0x439bf0` and `cache+0xb5c` writers, and look for the free-space or
+  "remaining ms" compare that signals `0x439c10`.
 
 ### Summary for the power question
 
@@ -314,30 +245,6 @@ It is likely the boot or disk-mode low-level path (**likely**). The IDE FIFO cop
 - Spin-up: implicit on the next command. The driver waits up to 3.1 s (`0x97830`) after a
   reset or wake, and up to 31 s after boot (`0x9439c`). The default command timeout is 10 s. confirmed.
 - Refill trigger: less than 20 s of cached audio left ahead of the play position (`0x45924`, likely).
-- Idle timeout value and the exact read-ahead size: not located yet. The spin-down path goes
-  through the message system (type 14, sub-op 2 → `0x134bc8`). Statically, the only
-  constructor of type-14 messages (`0xfac38`) is called with sub-ops 5/8/9, so sub-op 2 is set
-  some other way. The fastest route is dynamic: hook `0x134c58` (or `0xe0078`) in an emulator
-  and backtrace. That needs the emupod build, which this session is not allowed to run.
-
-## Follow-up pass (2026-10-28, second request)
-
-- I tried the emupod build again: still refused by the permission classifier.
-- Found the refill low-water mark (20 s, `0x45760`, see B.3).
-- Ruled out: a second type-14 message builder (scanned every function for an immediate 14
-  stored to `+0x14`: only `0xfac38` and the receiver `0x134d3c`).
-
-## Shortcut attempt: play without the UI (2026-10-28, 15 min timebox): not reached
-
-- The goal was to call the firmware's play function on TONEB directly and log READs per wake. I did not
-  find a callable "play track" entry in the timebox. What I checked: `0x54de4` (allocates a
-  0x424-byte per-track cache object and links it into the cache; called from `0x999ac` and
-  `0xe4bc8`, i.e. player/database setup) and `0x94918` (the playback tick that calls the refill check
-  `0x45760`). Neither can be called on its own without the playback controller's state, which
-  is not mapped yet.
-- So **bytes per wake and time between wakes are still unmeasured.** Two ways forward: (a) fix
-  the UI key path (the GPIO ISR already sees Select; trace where the event goes), then play from
-  the menus; or (b) map the "Now Playing" controller (strings `Now Playing` at `0x18fde0`/`0x190818`
-  and `NowPlayingMode` at `0x3074b0` are the way in) and call its start-playback method.
-- All scratch emupod changes are exported as one diff: `tools/emupod/emupod-gen3.patch` (179 lines:
-  `rust/pp5002/src/lib.rs`, `ata.rs`, `rust/pybind/src/lib.rs`), not committed anywhere.
+- Idle timeout: 12.8 s after the last disk access (emulation, confirmed); its code is not located.
+  The spin-down path goes through the message system (type 14, sub-op 2 → `0x134bc8`).
+- Read-ahead size per wake: not located or measured.

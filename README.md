@@ -70,7 +70,10 @@ skips, songs added to playlists, mix positions) when it syncs. Until it's out,
     tools/podinfo.py /Volumes/IPOD hidden         # also: skips, playlists, bookmarks, tracks
     tools/podinfo.py /Volumes/IPOD hide 1234      # hide track id 1234 (unhide to undo)
 
-Without FroggerArt the cover page shows a frog instead of covers. Any other syncing app
+`tools/coverart.py /Volumes/IPOD` writes the covers (FroggerArt) from the pictures in the
+songs, your music folders (`--library`) or pictures you pick (`--map`); it needs Pillow, which
+`nix develop` has (or `uv run tools/coverart.py ...` fetches it). Run it after every sync. Without FroggerArt the cover page shows a frog
+instead of covers. Any other syncing app
 writes a new database, and the iPod then ignores Frogger's files from before it.
 
 ## Development

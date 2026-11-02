@@ -53,7 +53,7 @@ words point into `[0, 0x346368)` against about 500 that point into `0x28xxxxxx`.
   written to `0x28000000 + A`. The `0x2800abcd` example in `loader/patches.c` is
   already in that form.
 
-**confirmed** on a device (2026-10-29): once Apple's OS runs, its image is **read-only**. A store
+**confirmed** on a device: once Apple's OS runs, its image is **read-only**. A store
 from the payload to `0x18e4e0` (bytecode in the UI bundle) was a data abort, through Apple's
 handler `0x41e5c`. emupod doesn't enforce this, so a Frogger feature that writes into
 `[0, 0x346368)` at runtime works there and crashes the iPod. Patch it from the loader instead
@@ -307,7 +307,7 @@ magic can't be set by accident.
 | `0xc4e64` | `ldr r0, [sp, #1044]` | Each mhod's type: album artist (22) read as the artist, and the artist mhod after it skipped (`artist.c`) |
 | `0xf205c` | `ldr r0, [sp, #88]` | Browse: drop a flagged track when the item's playlist is the master or the library |
 
-#### On a device (2026-10-28): nothing gets hidden
+#### On a device: nothing gets hidden
 
 Tested on a 3G with 15 flagged tracks: they all still show in Music › Artists and
 Music › Songs. The hooks that run while the database loads work. The browse loop

@@ -360,7 +360,7 @@ The other hex constants in `payload/`, `loader/` and `tools/mkpayload.py`: instr
 [ram]: re-notes.md#free-ram-for-any-resident-patch-code
 [itdb]: re-notes.md#itunesdb-where-artistsalbumssongs-come-from-for-m2
 [plload]: re-notes.md#playlist-loader-0xc4244-confirmed
-[hidden]: re-notes.md#on-a-device-2026-10-28-nothing-gets-hidden
+[hidden]: re-notes.md#on-a-device-nothing-gets-hidden
 [aa]: re-notes.md#album-artists-confirmed-in-emupod
 [keys]: re-notes.md#key-input-gpio-events-confirmed-from-the-code-and-emupod
 [uires]: re-notes.md#ui-resources-menus-strings-bytecode-for-m2s-all-artists
