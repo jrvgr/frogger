@@ -27,7 +27,8 @@ jobs:
     name: What changed
     runs-on: ubuntu-latest
     if: ${{ !inputs.all }}
-    permissions:
+    permissions:      # a job's list replaces the workflow's, so contents again for checkout
+      contents: read
       pull-requests: read
     outputs:
       lint: ${{ steps.filter.outputs.lint }}
