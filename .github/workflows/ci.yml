@@ -5,6 +5,11 @@ on:
     branches: [main]  # other branches run as their pull request; tags run from release.yml
   pull_request:
   workflow_call:      # release.yml runs every check before it publishes
+    inputs:
+      all:
+        description: Run every job, whatever changed
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -16,8 +21,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which parts changed, so a docs-only change doesn't boot the emulator. A job skipped here
+  # counts as passed for branch protection. Releases (workflow_call) run everything.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.all }}
+    permissions:
+      pull-requests: read
+    outputs:
+      lint: ${{ steps.filter.outputs.lint }}
+      build: ${{ steps.filter.outputs.build }}
+      emulator: ${{ steps.filter.outputs.emulator }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ci: &ci
+              - .github/workflows/ci.yml
+              - flake.nix
+              - flake.lock
+              - pyproject.toml
+            lint:
+              - *ci
+              - '**/*.py'
+              - '**/*.sh'
+              - ruff.toml
+            build:
+              - *ci
+              - loader/**
+              - payload/**
+              - tools/**
+              - tests/**
+            emulator:
+              - *ci
+              - loader/**
+              - payload/**
+              - tools/**          # the firmware unit tests run here too (install.py, hide, emu)
+              - tests/**
+              - .gitmodules
+              - third_party/**
+
   lint:
     name: Lint
+    needs: changes
+    if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.lint == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +79,8 @@ jobs:
 
   build:
     name: Build and unit tests
+    needs: changes
+    if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.build == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +98,8 @@ jobs:
 
   emulator:
     name: Firmware and emulator tests
+    needs: changes
+    if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.emulator == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
