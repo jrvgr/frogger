@@ -38,6 +38,13 @@ that a failure, as in CI.
 
 More, and what each check covers: [tools/emupod/README.md](tools/emupod/README.md).
 
+The README's screenshots come from the emulator too. After a change that shows on screen, make
+them again and commit `docs/screenshots/` with it (same setup as above; the files only change
+when the screen does):
+
+    python3 tools/emupod/screenshots.py                    # every shot, on a demo card of made-up music
+    python3 tools/emupod/screenshots.py --raw quick        # one scene, plus plain shots in build/emupod-work
+
 ## Layout
 
 | Path | What |

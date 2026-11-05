@@ -52,6 +52,7 @@ cycle (`npcycle.py`), the hold menu and queue step by step (`holdmenu.py`).
   `itdb.py`: iTunesDB records, for scripts that write their own database.
 - Cards: `mkcards.py`, `hmcard.py`, `mkart.py`, `mkresume.py`; `mkimage.py` makes the Frogger
   RAM image emupod boots; `checkart.py` reads a FroggerArt and draws it.
+- `screenshots.py`: the README's screenshots (`docs/screenshots/`), on a demo card it makes.
 - `probes/`: one-off reverse-engineering traces, kept for how things were found
   (`docs/re-notes.md`, `docs/tcmd.md`). They check nothing. Run them from this folder too, e.g.
   `python3 probes/settrace.py 8`.
