@@ -35,9 +35,22 @@ jobs:
       build: ${{ steps.filter.outputs.build }}
       emulator: ${{ steps.filter.outputs.emulator }}
     steps:
+      # A push to main that is a merged pull request's commit: that PR's run already tested it,
+      # so nothing runs again. Direct pushes to main still get the full checks.
+      - name: Merged pull request?
+        id: merged
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+                 --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"$GITHUB_SHA\")][0].number // empty")
+          if [ -n "$pr" ]; then echo "From pull request #$pr: its checks passed there, skipping."; echo "yes=true" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/checkout@v4
+        if: steps.merged.outputs.yes != 'true'
       - uses: dorny/paths-filter@v3
         id: filter
+        if: steps.merged.outputs.yes != 'true'
         with:
           filters: |
             ci: &ci
