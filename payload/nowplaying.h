@@ -75,6 +75,9 @@ void np_track_loaded(uint32_t record, uint32_t pos);
 void np_playing(uint32_t record);
 int np_art_update(void);
 void np_art_retry(void);
+/* The cover in art.px (BMap rows), 0 before the first; np_art_gen counts its changes. */
+const uint8_t *np_art_pixels(void);
+extern uint32_t np_art_gen;
 int np_visibility(uint32_t obj, uint32_t on);
 uint32_t np_vm(uint32_t pc);
 extern volatile uint8_t np_art_dirty;

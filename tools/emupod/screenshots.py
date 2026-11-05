@@ -317,6 +317,14 @@ def scene_nowplaying(d):
     d.film("page-slide", back=True)                         # and back to the cover page
 
 
+def scene_lock(d):
+    d.open(0, 3, d.song("Moonlit"))                         # play Moonlit
+    d.press("menu"); d.press("menu"); d.press("menu")       # the main menu
+    d.p.hold(True)
+    d.shot("lock-cover")                                    # Hold on: the lock screen
+    d.p.hold(False)
+
+
 def _gif(frames):
     """Rendered PNGs → a looping GIF: each end page held, the slide frames quick."""
     import io
@@ -398,7 +406,7 @@ def scene_hidden(d):
 
 def scene_settings(d):
     d.open(2)                                               # Frogger! (Settings)
-    d.scroll(16)
+    d.scroll(17)
     d.shot("settings")
 
 

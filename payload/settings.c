@@ -29,6 +29,7 @@ const char *const frogger_feature_labels[FEATURES] = {
     [FEATURE_QUICK] = "Quick Settings",
     [FEATURE_BATTERY] = "Battery Percent",
     [FEATURE_SLIDE] = "Page Slide",
+    [FEATURE_LOCK] = "Lock Cover",
 };
 
 #define PREFS_FLAGS (0xb04 / 4)
@@ -63,7 +64,7 @@ static uint32_t item_bit(uint32_t item)
     case FROGGER_ITEM_RESUME:   return FROGGER_PREF_NO_RESUME;
     default:
         if (item >= FROGGER_ITEM_FEATURE && item < FROGGER_ITEM_FEATURE + FEATURES)
-            return 1u << (FROGGER_PREF_NO_FEATURE + item - FROGGER_ITEM_FEATURE);
+            return FROGGER_PREF_FEATURE(item - FROGGER_ITEM_FEATURE);
         return 0;
     }
 }
@@ -77,7 +78,7 @@ int frogger_on(unsigned feature)
 
     if (!ui || !(lib = ((volatile uint32_t *)ui)[0x1c / 4]) || !(prefs = *(volatile uint32_t *)lib))
         return 1;
-    return !(((volatile uint32_t *)prefs)[PREFS_FLAGS] & 1u << (FROGGER_PREF_NO_FEATURE + feature));
+    return !(((volatile uint32_t *)prefs)[PREFS_FLAGS] & FROGGER_PREF_FEATURE(feature));
 }
 
 /* The string id of an item's value ("On"/"Off"), or 0 when it isn't ours. */

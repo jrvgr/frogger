@@ -12,7 +12,7 @@ CFLAGS  := -mcpu=arm7tdmi -marm -Os -std=c99 -Wall -Wextra -Werror \
            $(if $(filter 1,$(DEBUG)),-DFROGGER_DEBUG)
 LDFLAGS := -nostdlib -nostartfiles -T payload.lds -Wl,--gc-sections -Wl,--no-warn-rwx-segments -Wl,-Map=$(BUILD)/payload.map
 
-OBJS := $(BUILD)/hooks.o $(BUILD)/hide.o $(BUILD)/settings.o $(BUILD)/art.o $(BUILD)/nowplaying.o $(BUILD)/artist.o $(BUILD)/queue.o $(BUILD)/holdmenu.o $(BUILD)/playlist.o $(BUILD)/letters.o $(BUILD)/browse.o $(BUILD)/resume.o $(BUILD)/skips.o $(BUILD)/battery.o $(BUILD)/disk.o \
+OBJS := $(BUILD)/hooks.o $(BUILD)/hide.o $(BUILD)/settings.o $(BUILD)/art.o $(BUILD)/nowplaying.o $(BUILD)/artist.o $(BUILD)/queue.o $(BUILD)/holdmenu.o $(BUILD)/playlist.o $(BUILD)/letters.o $(BUILD)/browse.o $(BUILD)/resume.o $(BUILD)/skips.o $(BUILD)/battery.o $(BUILD)/disk.o $(BUILD)/lock.o \
         $(if $(filter 1,$(DEBUG)),$(BUILD)/debug.o)
 UNDEFINED := $(if $(filter 1,$(DEBUG)),crash_hook)
 
@@ -25,10 +25,10 @@ $(BUILD):
 $(BUILD)/flags: FORCE | $(BUILD)
 	@echo '$(CFLAGS)' | cmp -s - $@ || echo '$(CFLAGS)' > $@
 
-$(BUILD)/%.o: %.c hide.h settings.h nowplaying.h queue.h holdmenu.h playlist.h letters.h debug.h browse.h resume.h skips.h battery.h disk.h $(BUILD)/flags | $(BUILD)
+$(BUILD)/%.o: %.c hide.h settings.h nowplaying.h queue.h holdmenu.h playlist.h letters.h debug.h browse.h resume.h skips.h battery.h disk.h lock.h $(BUILD)/flags | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/%.o: %.S hide.h settings.h nowplaying.h queue.h holdmenu.h playlist.h letters.h debug.h browse.h resume.h skips.h battery.h disk.h $(BUILD)/flags | $(BUILD)
+$(BUILD)/%.o: %.S hide.h settings.h nowplaying.h queue.h holdmenu.h playlist.h letters.h debug.h browse.h resume.h skips.h battery.h disk.h lock.h $(BUILD)/flags | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/payload.elf: $(OBJS) payload.lds

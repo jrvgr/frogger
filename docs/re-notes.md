@@ -908,3 +908,34 @@ A dependency-free xref helper for quick questions before opening Ghidra.
 literal loads of values in a range, `words VALUE` finds data words, and
 `strings TEXT` finds a C string and the code that loads its address. Function
 boundaries come from `push {..., lr}` prologues, so they are approximate.
+
+## Lock Cover (**confirmed** in emupod)
+
+`payload/lock.c`, checked by `tools/emupod/lockcover.py`; `probes/holdprobe.py` shows stock.
+
+- **What stock draws** (`holdprobe.py`, Frogger with Lock Cover off): Hold on, the Hold thread
+  (`0x13c2a0`, a pin object with vtable `0x29378` waiting on event `0x78`) sees the level change
+  and calls its vtable `+8`, `0x8d470`, which signals the object's event `[obj+0x18]` (`0x37cc`)
+  and calls `0xad0f8(id)`; the UI then draws a small lock in the title bar (one LCD flush). A
+  key with Hold on draws nothing at all: `0xbe110` returns before the key reaches the UI (no
+  flush, and the backlight isn't touched there). Hold off takes the lock away (one flush). On
+  Now Playing's cover page, which has no title bar, nothing changes on screen.
+- **The lock screen**: `lock_tick` (tick_hook, ~4 times a second on the UI thread) reads Hold
+  with `0x7a9b8`, as `0xbe110` does. With Hold on, the switch on and a song playing or paused
+  (`[player+0x2a8]`, 0 when stopped), it draws its own screen: the 72×72 cover from `art.c` at
+  1.5× (nearest neighbour, 108×108), the title in a built-in 5×7 font (ASCII; Latin-1 letters
+  lose their accents) and a bar (`[player+0x2164]` of `track+0x54`). It builds the screen in
+  its own buffer, swaps it into the framebuffer `0x3835a0` for a full `lcd_flush`, and puts
+  Apple's pixels back, so the firmware keeps drawing its own screen underneath. It redraws
+  when the song, the cover or the bar's width changes.
+- **Keeping Apple's off the LCD**: while Lock Cover could show (`lock_armed`), `lcd_hook` asks
+  `lock_lcd`: with Hold on every flush is skipped (the title bar's lock too, so it never
+  flickers), and the first flush after Hold off flushes the whole framebuffer instead, which is
+  Apple's screen as it is now. `lock_tick` does the same if no flush comes. The cover page's
+  slide (`nowplaying.c`'s `lcd_all`) leaves the lock screen alone.
+- **The title**: the track record's `+0x24` is a key in the title pool on the library object
+  (`[track]+0xb0`); `0xbfb44`, which `0xeb1e8` uses for field 2, locks the pool (`0xa5004`),
+  looks the key up with `0x81ee8(pool, key, &text, &bytes)` and unlocks it (`0xef738`); the text
+  is UTF-16 halfwords (`0xc01b4` compares them as such).
+- **Not checked on a device**: the backlight with Hold on (left to stock), the LCD's look at
+  1.5×, and sleep with Hold on while paused (the screen goes off as stock's does, presumably).
