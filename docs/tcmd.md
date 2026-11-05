@@ -201,10 +201,11 @@ whole "Frogger" page later.
 
 ### The feature switches (**working in emupod**, `tools/emupod/switches.py`)
 
-Five more On/Off rows after Resume Mixes, for the features someone might not want: Cover Page,
-Hold Menu, Quick Settings, Battery Percent, Page Slide (`FEATURE_*` in `payload/settings.h`).
-Row `n` is item `0x2903 + n`, label `0x3f20 + n` and word 5's `NN` `0x13 + n`; its prefs bit is
-`19 + n`, set meaning Off, so all are On by default. `frogger_on(FEATURE_...)` reads the bit
+Six more On/Off rows after Resume Mixes, for the features someone might not want: Cover Page,
+Hold Menu, Quick Settings, Battery Percent, Page Slide, Lock Cover (`FEATURE_*` in
+`payload/settings.h`). Row `n` is item `0x2903 + n`, label `0x3f20 + n` and word 5's `NN`
+`0x13 + n`; its prefs bit is `19 + n` for the first five and `27 + n - 5` after (24-26 are the
+backlight timer's, `FROGGER_PREF_FEATURE`), set meaning Off, so all are On by default. `frogger_on(FEATURE_...)` reads the bit
 through the UI object (`[[0x43580c]+0x1c]` is the library), and counts everything as On until
 the UI is up. Each takes effect the next time the feature runs, no restart:
 
@@ -215,6 +216,7 @@ the UI is up. Each takes effect the next time the feature runs, no restart:
 | Quick Settings | fn 243 (`HM_QS_HOLD`) | Apple's backlight toggle |
 | Battery Percent | `battery_state`, `battery_resource` | Apple's state and level bitmaps, from the next battery reading |
 | Page Slide | `slide_begin` | the page switch as it's drawn |
+| Lock Cover | `lock_tick`, a few times a second | Hold is stock: the lock in the title bar |
 
 ### On the disk: `iPod_Control/Device/Preferences` (**confirmed** on a device)
 
@@ -231,6 +233,7 @@ little-endian u32 at **file offset `0xafc`**, and all of Frogger's switches live
 | 18 | Resume Mixes | Off |
 | 19 + `FEATURE_*` (19–23) | Cover Page, Hold Menu, Quick Settings, Battery Percent, Page Slide | Off |
 | 24–26 | the backlight timer's last value other than Off and Always On | 0 = none yet |
+| 27 | Lock Cover (`FEATURE_LOCK`) | Off |
 
 Found on a real iPod 3G (2026-11-03): with a copy of the file taken, Settings › Show Hidden was
 switched On, the iPod put to sleep (hold Play) and remounted; the only change in the file was bit 16
@@ -246,12 +249,12 @@ appears on the card (`persist.py` keeps the setting some other way). Use a devic
 about the saved file.
 
 Settings, like every list, opens on the row it was last left on: scripts scroll to the top
-first (`switches.py`). Nine Frogger rows now; a "Frogger" submenu (above) would tidy them.
+first (`switches.py`). Ten Frogger rows now; a "Frogger" submenu (above) would tidy them.
 
 ### Not done yet
 
 - A device test of the feature switches.
-- Bits 27 and up of the prefs flags are still free (16-23 Frogger's switches, 24-26 the
+- Bits 28 and up of the prefs flags are still free (16-23 and 27 Frogger's switches, 24-26 the
   backlight timer's last value).
 
 ## The hold menu (**working in emupod**, `payload/holdmenu.c`)

@@ -32,6 +32,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
     <td align="center"><img src="docs/screenshots/quick-settings.png" width="180" alt="Hold Menu: quick settings"><br><sub>Hold Menu: quick settings</sub></td>
     <td align="center"><img src="docs/screenshots/battery.png" width="180" alt="Battery percentage"><br><sub>Battery percentage</sub></td>
     <td align="center"><img src="docs/screenshots/settings.png" width="180" alt="Settings: a switch per feature"><br><sub>Settings: a switch per feature</sub></td>
+    <td align="center"><img src="docs/screenshots/lock-cover.png" width="180" alt="Hold on: the cover"><br><sub>Hold on: the cover</sub></td>
   </tr>
 </table>
 
@@ -40,6 +41,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
 - **Add to Playlist.** Add songs, albums or artists to any playlist on the iPod, synced ones included, or to a new one. They're kept on the iPod and survive a restart.
 - **Queue.** Queued songs play next, then playback goes back to where it was. Play, remove or clear from Now Playing or the main menu.
 - **Hidden songs.** Out of Artists, Albums, Genres and Composers, still in Songs and playlists. Settings › Show Hidden lists them.
+- **Lock Cover.** With Hold on while a song plays or is paused, the screen shows its cover large, the title and the progress bar.
 - **Quick settings.** Hold Menu anywhere: Backlight, Shuffle, Repeat, Sleep.
 - **Jump by letter.** Spin fast in a long list and it moves a letter at a time.
 - **Album artists.** Compilations list under their album artist.

@@ -21,7 +21,8 @@
 #define FEATURE_QUICK   2           /* quick settings, holding Menu (holdmenu.c) */
 #define FEATURE_BATTERY 3           /* the battery percentage (battery.c) */
 #define FEATURE_SLIDE   4           /* the cover page's slide (nowplaying.c) */
-#define FEATURES        5
+#define FEATURE_LOCK    5           /* Lock Cover, the cover while Hold is on (lock.c) */
+#define FEATURES        6
 #define FROGGER_ITEM_FEATURE 0x2903
 #define FROGGER_STR_FEATURE  0x3f20
 
@@ -38,6 +39,9 @@
 #define FROGGER_PREF_NO_LETTERS  (1u << 17)     /* set: Jump by Letter is Off (On by default) */
 #define FROGGER_PREF_NO_RESUME   (1u << 18)     /* set: Resume Mixes is Off (On by default) */
 #define FROGGER_PREF_NO_FEATURE  19             /* + FEATURE_...: set, that switch is Off */
+/* Bits 19-23 are the first five switches; bits 24-26 the timer below, so the
+ * sixth and later go on at bit 27. */
+#define FROGGER_PREF_FEATURE(f)  (1u << ((f) < 5 ? FROGGER_PREF_NO_FEATURE + (f) : 27 + (f) - 5))
 /* Bits 24-26: the backlight timer's last value other than Off and Always On
  * (quick settings' Backlight row cycles Off, it, Always On); 0 = none yet. */
 #define FROGGER_PREF_TIMER_SHIFT 24
