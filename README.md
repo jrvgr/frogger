@@ -49,6 +49,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
 - **Skip counts.** Songs left within 2–20 s count as skipped, as in iTunes.
 - **Battery percentage** in the title bar.
 - **Disk recovery.** On a flash mod (SD or CF adapter), a card that stops answering after a voltage dip is reset and the read retried, so the music plays on and the menus keep working.
+- **Flash Storage.** Settings › Flash Storage (Off, Auto, On; Off by default): on a flash mod the disk is sent to standby 1 s after its last use instead of Apple's 2–15 s. Auto turns it on only when the drive says it's flash.
 
 Settings has a switch for each one you might not want. Screenshots are from the emulator with made-up music (`tools/emupod/screenshots.py`). How it all works: `docs/`.
 

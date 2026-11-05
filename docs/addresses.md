@@ -85,6 +85,8 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 | `0x8e788` | `0xebfed0d9` `bl 0x42af4` | `battery_state` (C) | BL | | `0x8e760`, the bar's update: calls `0x42af4(bar)` itself; a level state becomes child 4 or 5 (the percentage) | `battery.c` | confirmed (emupod) | [The battery icon][bat] |
 | `0xc347c` | `0xe92d407c` `push {r2-r6, lr}` | `disk_reinit_hook` | B | `0xc3480` | First instruction of the drive re-init `0xc347c(ata, unit)`, run before the next command while `ata+0x1e0` is set: a drive still BSY/DRQ gets a soft reset (SRST) and up to 5 s to come back first | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 | `0xc788c` | `0xe92d47fc` `push {r2-r10, lr}` | `disk_read_hook` | B | (calls `0xc7890`) | First instruction of the ATA read `0xc788c(ata, unit, lba, buf, count)`: runs it again, up to 3 tries in all, while it fails with `ata+0x1e0` set | `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x9dbac` | `0xe5940190` `ldr r0, [r4, #400]` | `flash_id_hook` | BL | | ATA dispatcher `0x9da1c`, op `0xEC`, as the IDENTIFY ends (`r4` the ATA object, error at `+0x190`, the 512 bytes at `[+0x17c]`): keep words 0 and 217 and the model for Auto | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
+| `0x57820` | `0xe92d4010` `push {r4, lr}` | `flash_hold_hook` | B | `0x57824` | First instruction of the disk arbiter's `hold(client, ms)`: with Flash Storage on, `ms` is cut to 1000 | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
 
 Other patches, in `loader/patches.c` (bytes, not hooks):
 
@@ -207,6 +209,10 @@ Not called, but where the hooks sit or what they stand in for.
 | `0x12ff68`, `0x1300bc`, `0x1301fc` | ATA state handlers that check the timeout (`0xe7290`) and post event 5 | | confirmed | [The disk that stops answering][disk] |
 | `0xc7720` | Block-device read (ATA vtable `+0xc`), calls `0xc788c` | `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
 | `0xe9c4c` | TrackCacheReadTask: on a read error it goes back to waiting (`0xe9c6c`) and the refill is lost | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x13bc94` | The disk arbiter task (mailbox 19): 19 clients, each busy (`0x5790c`), released with a hold (`0x57820`) or idle; it waits for the next message or the shortest hold left (in 10 ms ticks), and when no client holds the disk it posts sub-op 2 (STANDBY) to the disk-power task, sub-op 4 otherwise (`0x13bf58..0x13bfb0`) | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
+| `0x57820` | `hold(client, ms)` | Arbiter message kind 2: the client is done, keep the disk up `ms / 10 + 1` ticks more. Callers: client 1 (database load `0xe4454`) 15000, 6 (TrackCacheReadTask `0xe9cac`) 10000, 4 (`0xbc18c`) 3000, 2 (playback `0x94b34`, `0x46d38`), 3 (`0xe4c1c`) and 10 2000, 8, 11, 13, 15 1000, 12 952, 7 100, 3 (`0xe1ed0`) and 9 0 | `flash.c` | confirmed (code, emupod) | [Flash Storage][flash] |
+| `0x5790c`, `0x57970` | `busy(client)` | Arbiter kind 0: the client uses the disk, no hold (`0x57970` with `[msg+0x24] = 1`) | | confirmed (code) | [Flash Storage][flash] |
+| `0x576ec`, `0x57758`, `0x577bc`, `0x578a8` | | Arbiter kinds 1, 5, 3, 4 (not followed) | | likely | [Flash Storage][flash] |
 | `0x54da8` | Where TrackCacheReadTask is started (`0xac6fc`, name at `0x1c0a68`): the pattern FroggerArt follows | `art.c` | confirmed | [The disk that stops answering][disk] |
 
 ## RAM objects and globals
@@ -241,6 +247,9 @@ Not called, but where the hooks sit or what they stand in for.
 | `0x36ffc0` | Apple's 15 battery thresholds (u16, rising, raw units): level = how many are ≤ raw | `battery.c` | confirmed (emupod) | [The battery icon][bat] |
 | `0x370d64` | The battery level 0..15 (16 none yet), moved a step per reading | | confirmed (emupod) | [The battery icon][bat] |
 | `0x1fd44dc` (heap, stock; differs with Frogger) `ata+0x10c`, `+0x114`/`+0x118`, `+0x1a4`, `+0x1e0` | The ATA object: pointers to the status, device-control and alt-status registers; the running command's timeout; re-init pending (set by `0x913d0`, cleared at `0xc3560`) | `disk.c`, `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x420a5c` (19 bytes), `0x420a70` (19 words), `0x420a54` | The disk arbiter's state: a client holds the disk, its ticks left (−1 busy), and `+4` "some client holds it" | | confirmed (code) | [Flash Storage][flash] |
+| `ata+0x17c`, `ata+0x190` | the transfer pointer: `0xdec68` stores the IDENTIFY buffer there, and at `0x9dbac` it points just past its 512 bytes (the buffer is reused later); the command's error | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
+| prefs flags (`prefs+0xb04`) bits 28-29 | Flash Storage: 0 Off, 1 Auto, 2 On | `settings.c` | confirmed (emupod) | [Flash Storage][flash] |
 | `0xc00033f8` | ATA device control (write: bit 1 nIEN, bit 2 SRST) / alternate status (read) | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 | `0x1ed44dc` (heap, with Frogger in emupod) | The ATA object as `disk_read_hook` sees it (r0 of `0xc788c`); `disk.c` keeps the pointer from the first read rather than a fixed address | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 
@@ -336,6 +345,8 @@ they're free):
 | `0x3f00`, `0x3f16`, `0x3f1e` | `Str ` | "Show Hidden", "Jump by Letter", "Resume Mixes" | `settings.h` |
 | `0x2903`–`0x2908` | Settings item id (word 6) | The feature switches: Cover Page, Hold Menu, Quick Settings, Battery Percent, Page Slide, Lock Cover | `settings.h` |
 | `0x3f20`–`0x3f25` | `Str ` | Their labels | `settings.h` |
+| `0x2909` | Settings item id (word 6) | Flash Storage | `settings.h` |
+| `0x3f26`, `0x3f27` | `Str ` | "Flash Storage", its value "Auto" | `settings.h` |
 | `0x3f2c` | `Str ` | Quick settings' "Sleep" | `holdmenu.h` |
 | `0x3f01` | `BMap` | The cover (`FROGGER_BMAP_ART`) | `settings.h` |
 | `0x3f10`, `0x3f11`, `0x3f12`, `0x3f13` | `Str ` | Hold menu: "Frogger", "Add to Queue", "Add to Playlist", "Add to" | `holdmenu.h` |
@@ -404,3 +415,4 @@ The other hex constants in `payload/`, `loader/` and `tools/mkpayload.py`: instr
 [npscreen]: nowplaying.md#how-the-screen-is-put-together-runtime
 [covers]: nowplaying.md#covers-confirmed-in-emupod-and-on-crates-output
 [disk]: power-and-emupod.md#part-c-the-disk-that-stops-answering-confirmed-in-emupod
+[flash]: power-and-emupod.md#part-d-flash-storage-working-in-emupod

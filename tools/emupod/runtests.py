@@ -15,7 +15,7 @@ ROOT = HERE.parents[1]
 LOGS = ROOT / "build/emupod-work/logs"
 CHECKS = ["holdmenu2", "upnext", "unhide", "quicksettings", "queuerow", "holdrow", "npfirst", "npslide",
           "npscrub", "resume", "readonly", "skips", "heaptop", "battery", "switches", "diskhang",
-          "lockcover"]
+          "lockcover", "flash"]
 
 
 def run(name):

@@ -31,6 +31,8 @@ const char *const frogger_feature_labels[FEATURES] = {
     [FEATURE_SLIDE] = "Page Slide",
     [FEATURE_LOCK] = "Lock Cover",
 };
+const char frogger_label_flash[] = "Flash Storage";
+const char frogger_label_auto[] = "Auto";
 
 #define PREFS_FLAGS (0xb04 / 4)
 #define SETTINGS_LIBRARY (0x54 / 4)
@@ -81,11 +83,26 @@ int frogger_on(unsigned feature)
     return !(((volatile uint32_t *)prefs)[PREFS_FLAGS] & FROGGER_PREF_FEATURE(feature));
 }
 
+/* The prefs flags word through the UI object, or 0 before the UI is up. */
+unsigned frogger_flash_mode(void)
+{
+    uint32_t ui = *(volatile uint32_t *)0x43580c, lib, prefs, v;
+
+    if (!ui || !(lib = ((volatile uint32_t *)ui)[0x1c / 4]) || !(prefs = *(volatile uint32_t *)lib))
+        return FLASH_OFF;
+    v = (((volatile uint32_t *)prefs)[PREFS_FLAGS] & FROGGER_PREF_FLASH) >> FROGGER_PREF_FLASH_SHIFT;
+    return v <= FLASH_ON ? v : FLASH_OFF;
+}
+
 /* The string id of an item's value ("On"/"Off"), or 0 when it isn't ours. */
 uint32_t setting_value(uint32_t item, uint32_t settings)
 {
     uint32_t bit = item_bit(item);
 
+    if (item == FROGGER_ITEM_FLASH) {
+        uint32_t v = (prefs_flags(library_of(settings)) & FROGGER_PREF_FLASH) >> FROGGER_PREF_FLASH_SHIFT;
+        return v == FLASH_AUTO ? FROGGER_STR_AUTO : v == FLASH_ON ? SETTING_ON : SETTING_OFF;
+    }
     if (!bit)
         return 0;
     return !(prefs_flags(library_of(settings)) & bit) == (item == FROGGER_ITEM_HIDDEN) ? SETTING_OFF : SETTING_ON;
@@ -153,6 +170,19 @@ int setting_set(uint32_t item, const uint16_t *msg, uint32_t settings)
 
     if (item == SETTING_TIMER)
         return timer_set(library_of(settings), msg, settings);
+    if (item == FROGGER_ITEM_FLASH) {        /* Select steps Off, Auto, On */
+        uint32_t v;
+
+        lib = library_of(settings);
+        flags = prefs_flags(lib);
+        v = (flags & FROGGER_PREF_FLASH) >> FROGGER_PREF_FLASH_SHIFT;
+        if (*msg == SETTING_TOGGLE)
+            v = v >= FLASH_ON ? FLASH_OFF : v + 1;
+        else
+            v = *msg == SETTING_ON ? FLASH_ON : *msg == FROGGER_STR_AUTO ? FLASH_AUTO : FLASH_OFF;
+        prefs_set_flags(lib, (flags & ~FROGGER_PREF_FLASH) | v << FROGGER_PREF_FLASH_SHIFT);
+        return 1;
+    }
     if (!bit)
         return 0;
     lib = library_of(settings);
