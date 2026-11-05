@@ -207,7 +207,7 @@ def dither(data):
     except Exception:
         return None
     img = ImageOps.fit(img, (SIZE, SIZE), Image.LANCZOS)          # fill the square, crop the rest
-    px = [float(v) for v in img.getdata()]
+    px = [float(v) for v in img.tobytes()]           # "L": one byte a pixel (getdata goes in Pillow 14)
     ranked = sorted(px)
     lo, hi = ranked[len(ranked) // 100], ranked[-1 - len(ranked) // 100]
     if hi - lo < 64:                                # hardly any contrast: stretching would only add noise
