@@ -8,7 +8,7 @@ battery reading (battery.py's stub) on music-card.img and checks, with each swit
 4. Battery Percent: on, the title bar shows the percentage; off, Apple's bars.
 5. Cover Page off: Now Playing opens on Apple's page, the art taking no room; on again, the cover
    page comes back.
-6. The switches are saved in the prefs flags (bits 19-23).
+6. The switches are saved in the prefs flags (bits 19-23). Lock Cover's (bit 27): lockcover.py.
 
 Screenshots sw_*.png. Exits 1 if a check fails."""
 import struct, sys

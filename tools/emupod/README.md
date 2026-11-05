@@ -35,6 +35,7 @@ this folder.
 | Settings' feature switches, each off | `switches.py` |
 | Now Playing: back to the cover page after a scrub | `npscrub.py` |
 | Now Playing: the page slide | `npslide.py` |
+| Lock Cover: Hold on, Hold off, the switch off | `lockcover.py` |
 | Resume Mixes | `resume.py` |
 | Skip counts, FroggerSkips | `skips.py` |
 | Battery percentage | `battery.py` |
