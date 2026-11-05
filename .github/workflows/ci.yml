@@ -97,6 +97,26 @@ jobs:
       - name: Unit tests that don't need Apple's firmware
         run: nix develop -c pytest -v -m 'not firmware and not emupod'
 
+  # install.py's raw-disk code, podinfo and coverart on the other OSes people install from
+  # (the build job runs them on Linux). Plain Python, no nix: what a user has.
+  portable:
+    name: Unit tests on ${{ matrix.os }}
+    needs: changes
+    if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.build == 'true') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest pillow
+      - name: install.py, podinfo and coverart tests
+        run: python -m pytest -v -m "not firmware and not emupod" tests/test_install.py tests/test_podinfo.py tests/test_coverart.py
+
   emulator:
     name: Firmware and emulator tests
     needs: changes

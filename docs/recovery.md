@@ -19,8 +19,9 @@ expects, so a wrong firmware version boots stock instead of crashing.
 
 ## Before the first install: back up
 
-`tools/install.py` saves the firmware partition every time it writes, so this is an extra.
-It needs `ipodpatcher` from Rockbox (`utils/ipodpatcher` in Rockbox's source; `nix develop`
+`tools/install.py` saves the firmware partition every time it writes (`--backup-dir`), so this
+is an extra, and on Windows that backup is all you need: these are shell scripts for macOS and
+Linux. It needs `ipodpatcher` from Rockbox (`utils/ipodpatcher` in Rockbox's source; `nix develop`
 doesn't have it). Connect the iPod in disk mode (below), then:
 
     tools/backup.sh
@@ -37,7 +38,8 @@ well; `backups/` is gitignored.
     tools/restore.sh backups/firmware-20261028-090000.bin
 
 It checks the file with `fwtool.py` and against its `.sha256`, asks you to type
-`restore`, and only then runs `ipodpatcher -w`.
+`restore`, and only then runs `ipodpatcher -w`. On Windows, put a backup back with
+`install.py disk-restore` (below).
 
 ## Button combinations
 
@@ -59,6 +61,12 @@ reads it back to check. By hand:
 
     sudo python3 tools/install.py disk-install /dev/rdiskN build/loader/frogger-loader.bin --backup-dir backups
 
+The disk is `/dev/rdiskN` on macOS (`diskutil list`, then `diskutil unmountDisk /dev/diskN`),
+`/dev/sdX` on Linux (`lsblk`, then `sudo umount` its partitions) and `\\.\PhysicalDriveN` on
+Windows (`Get-Disk`, or `list disk` in `diskpart`). On Windows, open the terminal with
+**Run as administrator** and leave out sudo: `py tools\install.py disk-status \\.\PhysicalDriveN`.
+install.py dismounts the iPod's drive letter there while it writes, and gives it back after.
+
 ## Undo an install
 
 Any of these gets you back to stock:
@@ -68,6 +76,9 @@ Any of these gets you back to stock:
 
 - Write the backup back: `ipodpatcher -w backups/ipod3g-firmware-partition.bin`
 - Remove the appended loader: `ipodpatcher -d`
+
+(Rockbox's `ipodpatcher.exe` takes the same `-r`, `-w` and `-d` on Windows, from an
+Administrator terminal.)
 - Restore with Apple's iPod Updater or iTunes (this also wipes the music).
 
 ## What can still go wrong

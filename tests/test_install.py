@@ -1,3 +1,4 @@
+import os
 import struct
 import sys
 import tempfile
@@ -39,6 +40,185 @@ def apm_disk(part):
         e[48:48 + len(ptype)] = ptype
         disk[k * 512:(k + 1) * 512] = e
     return disk + part + b"\xfa" * (2048 * 512)
+
+
+def fake_partition(size=PART_SIZE):
+    """A firmware partition shaped like Apple's 2.3 (osos of the right length, its checksum, aupd
+    after it), from made-up bytes: the disk tests run without Apple's firmware, on any OS."""
+    part = bytearray(size)
+    part[0:len(fwtool.STOP_SIGN)] = fwtool.STOP_SIGN
+    part[0x100:0x104] = fwtool.HEADER_MAGIC
+    struct.pack_into("<I", part, 0x104, 0x4000)                  # directory at 0x4200
+    struct.pack_into("<H", part, 0x10a, 2)
+    images = []
+    for ident, off, n in ((b"soso", 0x4400, install.OSOS_2_3_LEN), (b"dpua", 0x34a800, 0x9000)):
+        blob = bytearray((k * 7 + off) & 0xff for k in range(n))
+        if ident == b"soso":
+            blob[0x20:0x2c] = b"portalplayer"
+        part[off:off + n] = blob
+        images.append((ident, off, n, fwtool.byte_sum(blob)))
+    for k, (ident, off, n, chk) in enumerate(images):
+        fwtool.DIR_ENTRY.pack_into(part, 0x4200 + 40 * k, b"!ATA", ident, 0, off, n, 0x10000000, 0, chk, 0x20000, 0)
+    return bytes(part)
+
+
+class FakeDevice:
+    """A file that acts like a Windows raw disk: anything but whole 512-byte sectors at
+    sector-aligned offsets fails, as it does there."""
+
+    def __init__(self, path, mode="rb", buffering=-1):
+        self.f = open(path, mode, buffering=0)
+        self.log = []
+
+    def _check(self, what, n):
+        if n % 512:
+            raise OSError(22, f"unaligned {what} ({n:#x})")
+
+    def seek(self, pos, whence=0):
+        if whence == 0:
+            self._check("seek", pos)
+        return self.f.seek(pos, whence)
+
+    def read(self, n):
+        self._check("read", n)
+        self._check("read at", self.f.tell())
+        return self.f.read(n)
+
+    def write(self, b):
+        self._check("write", len(b))
+        self.log.append((self.f.tell(), len(b)))
+        return self.f.write(b)
+
+    def fileno(self):
+        return self.f.fileno()
+
+    def close(self):
+        self.f.close()
+
+
+class DevicePathTest(unittest.TestCase):
+    def test_windows_paths(self):
+        self.assertEqual(install.check_device(r"\\.\PhysicalDrive2"), "windows")
+        self.assertEqual(install.check_device("//./physicaldrive11"), "windows")
+        self.assertIsNone(install.check_device("/dev/sdb"))
+        self.assertIsNone(install.check_device("/dev/rdisk4"))
+        self.assertIsNone(install.check_device("ipod.img"))
+        for bad in ("E:", "e:\\", r"\\.\E:", r"\\?\Volume{1234}", r"\\.\Harddisk1Partition1", r"\\.\PhysicalDrive"):
+            with self.assertRaises(install.InstallError, msg=bad):
+                install.check_device(bad)
+        with self.assertRaises(install.InstallError):
+            install.check_device(r"\\.\PhysicalDrive2", partition=True)
+
+    def test_cli_refuses_a_drive_letter(self):
+        self.assertEqual(install.main(["disk-status", "E:"]), 1)
+
+
+@unittest.skipUnless(os.name == "nt", "Windows only")
+class WindowsVolumesTest(unittest.TestCase):
+    def test_lock_volumes_on_a_disk_that_isnt_there(self):
+        # walks every drive letter through the ctypes calls, finds none on disk 999, locks nothing
+        self.assertEqual(install._lock_volumes(999), [])
+
+
+class FakeDeviceTest(unittest.TestCase):
+    """The disk commands against image files through FakeDevice: no firmware, any OS."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.part = fake_partition()
+        self.devices = []
+
+        def opener(path, mode="rb", buffering=-1):
+            dev = FakeDevice(self.images.get(str(path), path), mode)
+            self.devices.append(dev)
+            return dev
+        self.images = {}
+        self.locks = []
+        self._saved = install._open, install._lock_volumes, install._unlock_volumes
+        install._open = opener
+        install._lock_volumes = lambda n: self.locks.append(("lock", n)) or [("Z", n)]
+        install._unlock_volumes = lambda handles: self.locks.append(("unlock", handles))
+
+    def tearDown(self):
+        install._open, install._lock_volumes, install._unlock_volumes = self._saved
+        self.tmp.cleanup()
+
+    def test_fake_partition_is_stock_2_3(self):
+        self.assertEqual(install.status(self.part), ("stock", 0))
+        self.assertEqual(install.status(install.patch(self.part, LOADER)), ("frogger", len(LOADER)))
+
+    def test_fake_device_rejects_unaligned_io(self):
+        img = self.dir / "d.img"
+        img.write_bytes(bytes(4096))
+        dev = FakeDevice(img)
+        with self.assertRaises(OSError):
+            dev.read(100)
+        with self.assertRaises(OSError):
+            dev.seek(100)
+        dev.close()
+
+    def test_unaligned_reads_go_through_whole_sectors(self):
+        img = self.dir / "d.img"
+        data = bytes(k & 0xff for k in range(8192))
+        img.write_bytes(data)
+        disk = install.Disk(str(img))
+        try:
+            self.assertEqual(disk.read(100, 50), data[100:150])
+            self.assertEqual(disk.read(510, 1030), data[510:1540])
+            self.assertEqual(disk.read(1024, 512), data[1024:1536])
+            self.assertIsNone(disk.sector_size())                # an image file has none
+        finally:
+            disk.close()
+
+    def round_trip(self, image, path=None, partition=False):
+        img = self.dir / "ipod.img"
+        img.write_bytes(image)
+        path = path or str(img)
+        self.images[path] = img
+        backups = self.dir / "backups"
+        self.assertEqual(install.disk_status(path, partition), ("stock", 0))
+        backup = install.disk_install(path, LOADER, backups, partition=partition)
+        self.assertEqual(backup.read_bytes(), self.part)
+        self.assertEqual(install.disk_status(path, partition), ("frogger", len(LOADER)))
+        after = img.read_bytes()
+        start = image.index(self.part[:0x200])
+        self.assertEqual(after[:start], image[:start])                                     # partition table untouched
+        self.assertEqual(after[start + len(self.part):], image[start + len(self.part):])   # data partition untouched
+        writes = [w for d in self.devices for w in d.log]
+        self.assertTrue(writes)
+        self.assertTrue(all(off % 512 == 0 and n % 512 == 0 for off, n in writes))
+        self.assertEqual(install.main(["disk-remove", path, "--backup-dir", str(backups)]
+                                      + (["--partition"] if partition else [])), 0)
+        self.assertEqual(install.disk_status(path, partition), ("stock", 0))
+        self.assertEqual(install.main(["disk-restore", path, str(backup)] + (["--partition"] if partition else [])), 0)
+        self.assertEqual(img.read_bytes(), image)
+
+    def test_mbr_disk(self):
+        self.round_trip(bytes(mbr_disk(self.part)))
+        self.assertEqual(self.locks, [])
+
+    def test_apm_disk(self):
+        self.round_trip(bytes(apm_disk(self.part)))
+
+    def test_partition_device(self):
+        self.round_trip(self.part, partition=True)
+
+    def test_windows_physical_drive(self):
+        self.round_trip(bytes(mbr_disk(self.part)), path=r"\\.\PhysicalDrive3")
+        # each write (install, remove, restore) locks the volumes on disk 3 and gives them back
+        self.assertEqual(self.locks, [("lock", 3), ("unlock", [("Z", 3)])] * 3)
+
+    def test_windows_refuses_what_isnt_an_ipod(self):
+        img = self.dir / "other.img"
+        img.write_bytes(bytes(mbr_disk(bytes(len(self.part)))))      # an MBR, but no firmware in it
+        self.images[r"\\.\PhysicalDrive0"] = img
+        before = img.read_bytes()
+        (self.dir / "l.bin").write_bytes(LOADER)
+        self.assertEqual(install.main(["disk-install", r"\\.\PhysicalDrive0", str(self.dir / "l.bin"),
+                                       "--backup-dir", str(self.dir / "b")]), 1)
+        self.assertEqual(img.read_bytes(), before)
+        self.assertEqual(self.locks, [])
 
 
 @pytest.mark.firmware("firmware/iPod_2.2.3.ipsw")

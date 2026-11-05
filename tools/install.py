@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install Frogger's loader into an iPod 3G's firmware partition, or take it out.
+r"""Install Frogger's loader into an iPod 3G's firmware partition, or take it out.
 
 Frogger never touches the iPod's flash. The flash boot code loads the osos
 image from the hard drive's firmware partition and jumps to its entry
@@ -13,9 +13,12 @@ Partition images (files, no root needed):
     install.py strip PARTITION -o OUT
     install.py status PARTITION
 
-A whole disk (or a disk image file), or with --partition the firmware
-partition's own device (/dev/rdisk6s2, from `diskutil list`). Reading raw
-devices needs root, and Crate unmounts the iPod's volume while writing:
+A whole disk (or a disk image file): /dev/rdiskN on macOS (`diskutil list`),
+/dev/sdX on Linux (`lsblk`), \\.\PhysicalDriveN on Windows (`Get-Disk`). Or with
+--partition the firmware partition's own device (/dev/rdisk6s2, /dev/sdX1; not
+on Windows). Raw devices need root (sudo) or, on Windows, an Administrator
+terminal. Unmount the iPod's volume first (diskutil unmountDisk, umount); on
+Windows install.py locks and dismounts it while it writes:
 
     install.py disk-status /dev/rdiskN
     install.py disk-install /dev/rdiskN LOADER --backup-dir DIR [--owner UID]
@@ -29,7 +32,9 @@ isn't Apple's 2.3 osos (or 2.3 with a Frogger loader on it).
 """
 
 import argparse
+import errno
 import os
+import re
 import struct
 import sys
 import time
@@ -157,44 +162,181 @@ def find_firmware_partition(read):
     raise InstallError("no partition table (neither MBR nor Apple Partition Map)")
 
 
+CHUNK = 1 << 20                  # whole sectors: Windows raw disks take nothing else
+WINDOWS = os.name == "nt"
+
+
+def check_device(path, partition=False):
+    r"""'windows' for \\.\PhysicalDriveN, else None (a Unix device or an image file). Refuses
+    the Windows paths that aren't a whole physical disk: drive letters and volumes."""
+    p = str(path).replace("/", "\\")
+    if re.fullmatch(r"[A-Za-z]:\\?", p) or re.fullmatch(r"\\\\[.?]\\[A-Za-z]:\\?", p):
+        raise InstallError(f"{path} is a drive letter: give the iPod's whole disk, \\\\.\\PhysicalDriveN "
+                           "(the Number column of Get-Disk)")
+    if p.startswith(("\\\\.\\", "\\\\?\\")):
+        if not re.fullmatch(r"(?i)PhysicalDrive\d+", p[4:]):
+            raise InstallError(f"{path}: on Windows only a whole disk, \\\\.\\PhysicalDriveN, will do")
+        if partition:
+            raise InstallError("--partition doesn't work on Windows: give the whole disk, \\\\.\\PhysicalDriveN")
+        return "windows"
+    return None
+
+
+def _hint():
+    if WINDOWS:
+        return "run it from an Administrator terminal"
+    if sys.platform == "darwin":
+        return "run it with sudo, after diskutil unmountDisk /dev/diskN"
+    return "run it with sudo, after umount-ing the iPod's partitions (lsblk shows them)"
+
+
+_open = open                     # tests swap in a fake device
+
+
 class Disk:
+    """A raw disk, a partition device or an image file. Every read and write is whole
+    512-byte sectors at sector-aligned offsets, which Windows' raw disks insist on."""
+
     def __init__(self, path, write=False, partition=False):
-        self.f = open(path, "r+b" if write else "rb", buffering=0)
+        self.kind = check_device(path, partition)
+        self.number = int(re.search(r"\d+$", str(path)).group()) if self.kind == "windows" else None
         self.partition = partition
+        try:
+            self.f = _open(path, "r+b" if write else "rb", buffering=0)
+        except PermissionError as e:
+            raise InstallError(f"{path}: permission denied; {_hint()}") from e
+        except OSError as e:
+            if e.errno == errno.EBUSY:
+                raise InstallError(f"{path} is busy (mounted?); {_hint()}") from e
+            raise
+        size = self.sector_size()
+        if size not in (None, SECTOR):
+            self.f.close()
+            raise InstallError(f"{path} has {size}-byte sectors; an iPod 3G's disk has {SECTOR}")
+
+    def sector_size(self):
+        """The device's logical sector size, or None for an image file (or when it can't say)."""
+        try:
+            fd = self.f.fileno()
+            if WINDOWS:
+                import ctypes
+                import msvcrt
+                from ctypes import wintypes
+                k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                k32.DeviceIoControl.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD,
+                                                wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+                                                wintypes.LPVOID]
+                geometry, got = ctypes.create_string_buffer(24), wintypes.DWORD()
+                if not k32.DeviceIoControl(msvcrt.get_osfhandle(fd), 0x70000, None, 0,   # IOCTL_DISK_GET_DRIVE_GEOMETRY
+                                           geometry, 24, ctypes.byref(got), None):
+                    return None
+                return struct.unpack_from("<I", geometry.raw, 20)[0]           # BytesPerSector
+            import fcntl
+            req = 0x1268 if sys.platform.startswith("linux") else 0x40046418   # BLKSSZGET, DKIOCGETBLOCKSIZE
+            return struct.unpack("<I", fcntl.ioctl(fd, req, bytes(4)))[0]
+        except (OSError, ValueError, AttributeError, ImportError):
+            return None
 
     def firmware_partition(self):
         """(offset, size) of the firmware partition: the whole device with
         --partition, else found in the partition table."""
         if not self.partition:
             return find_firmware_partition(self.read)
-        size = 0
+        try:
+            size = self.f.seek(0, os.SEEK_END)        # files and Linux block devices
+        except OSError:
+            size = 0
+        if size:
+            return 0, size
         self.f.seek(0)
-        while True:                       # raw devices don't report a size through seek
-            chunk = self.f.read(1 << 20)
+        while True:                       # macOS raw devices don't report a size through seek
+            chunk = self.f.read(CHUNK)
             if not chunk:
                 return 0, size
             size += len(chunk)
 
     def read(self, offset, n):
-        self.f.seek(offset)
+        lo = offset - offset % SECTOR
+        hi = -(-(offset + n) // SECTOR) * SECTOR
+        self.f.seek(lo)
         out = bytearray()
-        while len(out) < n:
-            chunk = self.f.read(min(n - len(out), 1 << 20))
+        while len(out) < hi - lo:
+            chunk = self.f.read(min(hi - lo - len(out), CHUNK))
             if not chunk:
-                raise InstallError(f"short read at {offset + len(out):#x}")
+                raise InstallError(f"short read at {lo + len(out):#x}")
             out += chunk
-        return bytes(out)
+        return bytes(out[offset - lo:offset - lo + n])
 
     def write(self, offset, data):
         assert offset % SECTOR == 0 and len(data) % SECTOR == 0
         self.f.seek(offset)
         view = memoryview(data)
-        for k in range(0, len(data), 1 << 20):
-            self.f.write(view[k:k + (1 << 20)])
+        for k in range(0, len(data), CHUNK):
+            part = view[k:k + CHUNK]
+            if self.f.write(part) != len(part):
+                raise InstallError(f"short write at {offset + k:#x}; restore the backup")
         os.fsync(self.f.fileno())
+        if hasattr(os, "posix_fadvise"):    # Linux: drop the cached copy, so the read-back reads the disk
+            os.posix_fadvise(self.f.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
 
     def close(self):
         self.f.close()
+
+
+def _lock_volumes(number):
+    r"""Locks and dismounts the volumes (drive letters) on \\.\PhysicalDrive<number>, so Windows
+    lets raw writes through. Returns their handles: closing them gives the volumes back."""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    k32.DeviceIoControl.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD,
+                                    wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    invalid = wintypes.HANDLE(-1).value
+
+    def ioctl(h, code, out=None):
+        got = wintypes.DWORD()
+        return k32.DeviceIoControl(h, code, None, 0, out, len(out) if out is not None else 0, ctypes.byref(got), None)
+
+    handles = []
+    mask = k32.GetLogicalDrives()
+    for letter in (chr(65 + i) for i in range(26) if mask >> i & 1):
+        h = k32.CreateFileW(f"\\\\.\\{letter}:", 0xC0000000, 3, None, 3, 0, None)  # read|write, share r|w, open existing
+        if h in (None, invalid):
+            continue
+        extents = ctypes.create_string_buffer(8 + 24 * 16)
+        if not ioctl(h, 0x560000, extents):                                      # IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS
+            k32.CloseHandle(h)
+            continue
+        count = struct.unpack_from("<I", extents.raw)[0]
+        disks = {struct.unpack_from("<I", extents.raw, 8 + 24 * k)[0] for k in range(min(count, 16))}
+        if number not in disks:
+            k32.CloseHandle(h)
+            continue
+        for _ in range(10):                                                      # Explorer lets go after a moment
+            if ioctl(h, 0x90018):                                                # FSCTL_LOCK_VOLUME
+                break
+            time.sleep(0.5)
+        else:
+            print(f"warning: {letter}: is in use; dismounting it anyway", file=sys.stderr)
+        if not ioctl(h, 0x90020):                                                # FSCTL_DISMOUNT_VOLUME
+            err = ctypes.get_last_error()
+            k32.CloseHandle(h)
+            for _, other in handles:
+                k32.CloseHandle(other)
+            raise InstallError(f"couldn't dismount {letter}: (error {err}); close what uses it and try again")
+        handles.append((letter, h))
+    return handles
+
+
+def _unlock_volumes(handles):
+    import ctypes
+    k32 = ctypes.WinDLL("kernel32")
+    for _, h in handles:
+        k32.CloseHandle(ctypes.c_void_p(h))
 
 
 def _changed_range(old, new):
@@ -208,7 +350,12 @@ def _write_partition(disk, offset, old, new):
     r = _changed_range(old, new)
     if r:
         lo, hi = r
-        disk.write(offset + lo, bytes(new[lo:hi]))
+        locked = _lock_volumes(disk.number) if disk.kind == "windows" else []
+        try:
+            disk.write(offset + lo, bytes(new[lo:hi]))
+        finally:
+            if locked:
+                _unlock_volumes(locked)
     if disk.read(offset, len(new)) != bytes(new):
         raise InstallError("read-back after writing doesn't match; restore the backup")
 

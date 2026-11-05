@@ -41,21 +41,36 @@ Apple's behaviour again, from the next time the feature runs. How each feature w
 You need:
 
 - A 3rd generation iPod on Apple's firmware 2.3, the last one for the 3G (in `iPod_2.2.3.ipsw`).
-- A Mac, and Python 3.
+- A Mac, Linux or Windows computer, and Python 3.
 - Frogger's tools: [download this repo](https://github.com/jrvgr/frogger/archive/refs/heads/main.zip)
   or `git clone` it.
 - `frogger-loader.bin` from the latest [release](https://github.com/jrvgr/frogger/releases).
-  `SHA256SUMS` next to it has its checksum (`shasum -a 256 -c SHA256SUMS`).
+  `SHA256SUMS` next to it has its checksum (`shasum -a 256 -c SHA256SUMS`; `sha256sum -c` on
+  Linux, `Get-FileHash` on Windows).
 
 Frogger takes the top 1 MiB of the iPod's 32 MiB of RAM for itself. That comes out of the
 song cache, so a hard drive spins up a little more often and the battery runs down a little
 sooner. A flash mod (a CF or SD card in place of the drive) is recommended for that reason.
 
-Put the iPod in disk mode, find it with `diskutil list` (say it's `/dev/disk4`), then from the
-repo's folder:
+Put the iPod in disk mode and find its disk, then run this from the repo's folder.
+
+macOS: `diskutil list` shows it (say `/dev/disk4`).
 
     diskutil unmountDisk /dev/disk4
     sudo python3 tools/install.py disk-install /dev/rdisk4 frogger-loader.bin --backup-dir backups
+
+Linux: `lsblk` shows it (say `/dev/sdb`, with the music on `/dev/sdb2`).
+
+    sudo umount /dev/sdb2
+    sudo python3 tools/install.py disk-install /dev/sdb frogger-loader.bin --backup-dir backups
+
+Windows: in a terminal opened with **Run as administrator**, `Get-Disk` (or `diskpart`, then
+`list disk`) shows its number N. install.py dismounts the iPod's drive letter while it writes.
+
+    py tools\install.py disk-install \\.\PhysicalDriveN frogger-loader.bin --backup-dir backups
+
+`disk-status` (same disk argument) says whether Frogger is on it. It only takes a disk whose
+firmware partition is Apple's 2.3, so a wrong disk number is refused before anything is written.
 
 It saves the whole firmware partition to `backups/` before it changes anything. Keep a copy of
 that file somewhere else too. Restart the iPod (hold Menu + Play). The main menu says
@@ -72,13 +87,16 @@ To build the loader yourself, see [CONTRIBUTING.md](CONTRIBUTING.md#building).
 - `sudo python3 tools/install.py disk-remove /dev/rdiskN --backup-dir backups`: take Frogger out.
 - `sudo python3 tools/install.py disk-restore /dev/rdiskN backups/FILE`: put a saved firmware
   partition back, byte for byte.
+- On Linux the disk is `/dev/sdX`; on Windows, `py tools\install.py ... \\.\PhysicalDriveN` from
+  an Administrator terminal, without sudo.
 - [docs/recovery.md](docs/recovery.md) has disk mode and the rest.
 
 ## Without Crate
 
 Crate writes the covers, sets the hide flag and reads back what the iPod recorded (hides,
 skips, songs added to playlists, mix positions) when it syncs. Until it's out,
-`tools/podinfo.py` shows that data and sets the flag (plain Python 3, iPod mounted):
+`tools/podinfo.py` shows that data and sets the flag (plain Python 3, iPod mounted; on Linux
+it's where it's mounted, say `/media/$USER/IPOD`, on Windows its drive letter, `py tools\podinfo.py E:\`):
 
     tools/podinfo.py /Volumes/IPOD                # summary
     tools/podinfo.py /Volumes/IPOD hidden         # also: skips, playlists, bookmarks, tracks

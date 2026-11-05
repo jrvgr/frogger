@@ -3,7 +3,6 @@
     nix develop -c pytest                  # unit tests; the firmware ones skip without build/fw
     nix develop .#emu -c pytest -n auto    # everything, emupod checks included (CONTRIBUTING.md)
 """
-import fcntl
 import subprocess
 import sys
 import uuid
@@ -65,6 +64,7 @@ def emupod_image(request):
     if reason:
         reason += "; see CONTRIBUTING.md, Emulator tests (setup.sh, make -C loader, mkcards.py)"
         (pytest.fail if request.config.getoption("require_firmware") else pytest.skip)(reason)
+    import fcntl  # here, not at the top: the install/podinfo/coverart tests also run on Windows
     stamp = work / f".mkimage-{request.config.frogger_run}"
     with open(work / ".mkimage.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
