@@ -46,9 +46,9 @@ jobs:
           pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
                  --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"$GITHUB_SHA\")][0].number // empty")
           if [ -n "$pr" ]; then echo "From pull request #$pr: its checks passed there, skipping."; echo "yes=true" >> "$GITHUB_OUTPUT"; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.merged.outputs.yes != 'true'
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         if: steps.merged.outputs.yes != 'true'
         with:
@@ -84,8 +84,8 @@ jobs:
     if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.lint == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v30
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
       - name: ruff (errors only, see ruff.toml) and shellcheck
         run: |
           nix shell --inputs-from . nixpkgs#ruff nixpkgs#shellcheck -c bash -c \
@@ -97,8 +97,8 @@ jobs:
     if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.build == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v30
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
       # The Nix store (the dev shell's toolchain), kept until flake.nix or flake.lock changes.
       - uses: nix-community/cache-nix-action@v7
         with:
@@ -122,8 +122,8 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install pytest pillow
@@ -136,10 +136,10 @@ jobs:
     if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.emulator == 'true') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
-      - uses: cachix/install-nix-action@v30
+      - uses: cachix/install-nix-action@v31
       # The Nix store (the dev shell's toolchain), kept until flake.nix or flake.lock changes.
       - uses: nix-community/cache-nix-action@v7
         with:
@@ -148,7 +148,7 @@ jobs:
           gc-max-store-size-linux: 5G
       # Apple's firmware is never in this repo: it's fetched from Apple (once, then from the
       # Actions cache) and checked.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: firmware/iPod_2.2.3.ipsw
           key: ipsw-2.2.3-bec081f2
@@ -164,7 +164,7 @@ jobs:
       - name: emupod cache key
         id: emupod-key
         run: echo "key=emupod-so-${{ runner.os }}-$(git rev-parse HEAD:third_party/emupod)-${{ hashFiles('tools/emupod/emupod-gen3.patch', 'flake.lock') }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6
         id: emupod-cache
         with:
           path: third_party/emupod/emupod/emupod_rs.abi3.so
@@ -173,7 +173,7 @@ jobs:
         run: nix develop .#emu -c tools/emupod/setup.sh
         env:
           EMUPOD_PREBUILT: ${{ steps.emupod-cache.outputs.cache-hit }}
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v6
         if: steps.emupod-cache.outputs.cache-hit != 'true'
         with:
           path: third_party/emupod/emupod/emupod_rs.abi3.so
@@ -189,7 +189,7 @@ jobs:
         run: nix develop .#emu -c python3 tools/emupod/mkcards.py
       - name: Emulator tests
         run: nix develop .#emu -c pytest -v -n auto --durations=0 --require-firmware -m emupod
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: emupod-logs
