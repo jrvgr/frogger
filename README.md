@@ -13,88 +13,42 @@ stock firmware.
 Work in progress. Some features need a syncing app that knows about them: that's
 [Crate](#without-crate), a Mac app that isn't released yet.
 
-<p align="center">
-  <img src="docs/screenshots/cover-page.png" width="240" alt="The cover page: title, cover and progress bar">
-  <img src="docs/screenshots/hold-nowplaying.png" width="240" alt="The hold menu on Now Playing, with the Queue row">
-  <img src="docs/screenshots/jump-letter.png" width="240" alt="Songs mid-jump, with the letter G in the title bar">
-</p>
-
 ## Features
 
-Screenshots from the emulator, on a demo card of made-up music (`tools/emupod/screenshots.py` makes them).
-
-### Now Playing
-
 <table>
   <tr>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/cover-page.png" width="240" alt="The cover page: title, cover and progress bar"><br>
-      <b>Cover page</b><br>Now Playing opens on the title, a 72×72 cover and the progress bar.</td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/apple-page.png" width="240" alt="Apple's Now Playing page with title, artist and album"><br>
-      <b>Page slide</b><br>Select slides to Apple's page (scrubbing, rating), and it slides back.</td>
+    <td align="center"><img src="docs/screenshots/cover-page.png" width="180" alt="Cover page"><br><sub>Cover page</sub></td>
+    <td align="center"><img src="docs/screenshots/apple-page.png" width="180" alt="Page slide"><br><sub>Page slide</sub></td>
+    <td align="center"><img src="docs/screenshots/hold-song.png" width="180" alt="Hold menu"><br><sub>Hold menu</sub></td>
+    <td align="center"><img src="docs/screenshots/hold-nowplaying.png" width="180" alt="On Now Playing"><br><sub>On Now Playing</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/up-next.png" width="180" alt="Queue"><br><sub>Queue</sub></td>
+    <td align="center"><img src="docs/screenshots/main-queue.png" width="180" alt="Queue on the menu"><br><sub>Queue on the menu</sub></td>
+    <td align="center"><img src="docs/screenshots/jump-letter.png" width="180" alt="Jump by letter"><br><sub>Jump by letter</sub></td>
+    <td align="center"><img src="docs/screenshots/album-artists.png" width="180" alt="Album artists"><br><sub>Album artists</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/hide.png" width="180" alt="Hidden songs"><br><sub>Hidden songs</sub></td>
+    <td align="center"><img src="docs/screenshots/quick-settings.png" width="180" alt="Quick settings"><br><sub>Quick settings</sub></td>
+    <td align="center"><img src="docs/screenshots/battery.png" width="180" alt="Battery percent"><br><sub>Battery percent</sub></td>
+    <td align="center"><img src="docs/screenshots/settings.png" width="180" alt="Switches"><br><sub>Switches</sub></td>
   </tr>
 </table>
 
+- **Cover page.** Now Playing opens on the title, a 72×72 cover and the progress bar. Select slides to Apple's page and back.
+- **Hold menu.** Hold Select on a song, album, artist, playlist or Now Playing: Add to Queue, Play Album Next, Add to Playlist, Go to Album/Artist, Hide.
+- **Queue.** Queued songs play next, then playback goes back to where it was. Play, remove or clear from Now Playing or the main menu.
+- **Hidden songs.** Out of Artists, Albums, Genres and Composers, still in Songs and playlists. Settings › Show Hidden lists them.
+- **Quick settings.** Hold Menu anywhere: Backlight, Shuffle, Repeat, Sleep.
+- **Jump by letter.** Spin fast in a long list and it moves a letter at a time.
+- **Album artists.** Compilations list under their album artist.
 - **Resume mixes.** Songs of 20 minutes or longer start where you left them.
 - **Skip counts.** Songs left within 2–20 s count as skipped, as in iTunes.
+- **Battery percentage** in the title bar.
+- **Disk recovery.** On a flash mod (SD or CF adapter), a card that stops answering after a voltage dip is reset and the read retried, so the music plays on and the menus keep working.
 
-### Hold menu and Queue
-
-<table>
-  <tr>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/hold-song.png" width="240" alt="The hold menu on a song: Add to Queue, Play Album Next, Add to Playlist, Go to Album, Go to Artist, Hide"><br>
-      <b>Hold menu</b><br>Hold Select on a song, album, artist or playlist.</td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/hold-nowplaying.png" width="240" alt="The hold menu on Now Playing, with the Queue row"><br>
-      <b>On Now Playing</b><br>Hold Select there too. Queue shows when songs are waiting.</td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/up-next.png" width="240" alt="The queue: four songs waiting"><br>
-      <b>Queue</b><br>Queued songs play next, then playback goes back to where it was.</td>
-  </tr>
-  <tr>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/main-queue.png" width="240" alt="The main menu with a Queue row under Music"><br>
-      <b>On the main menu</b><br>The queue has a row there while songs wait.</td>
-  </tr>
-</table>
-
-From the queue you can play a song, remove one or clear it.
-
-### Browsing
-
-<table>
-  <tr>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/jump-letter.png" width="240" alt="Songs mid-jump, with the letter G in the title bar"><br>
-      <b>Jump by letter</b><br>Spin the wheel fast in a long list and it moves a letter at a time.</td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/album-artists.png" width="240" alt="Artists, with a compilation's album artist and none of its track artists"><br>
-      <b>Album artists</b><br>Compilations list under their album artist.</td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/hide.png" width="240" alt="The hold menu on an album, with Hide highlighted"><br>
-      <b>Hidden songs</b><br>Hide an album, artist or song from the hold menu.</td>
-  </tr>
-</table>
-
-Hidden songs stay out of Artists, Albums, Genres and Composers but still play from Songs and
-playlists. Show un-hides them, and Settings › Show Hidden lists them again.
-
-### Settings and status
-
-<table>
-  <tr>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/quick-settings.png" width="240" alt="Quick settings: Backlight, Shuffle, Repeat, Sleep"><br>
-      <b>Quick settings</b><br>Hold Menu anywhere: Backlight, Shuffle, Repeat, Sleep.</td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/battery.png" width="240" alt="The main menu with 81% in the title bar"><br>
-      <b>Battery percentage</b><br>In the title bar, in place of the bars.</td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/settings.png" width="240" alt="Settings with Frogger's switches, all on"><br>
-      <b>Switches</b><br>Turn off the features you don't want.</td>
-  </tr>
-</table>
-
-- **Disk recovery.** On a flash mod (an SD or CF adapter), the card can stop answering after a
-  dip in the supply voltage. Apple's firmware then plays what's in memory and stops until a
-  restart. Frogger resets the card and tries the read again, so the music plays on. Covers load
-  on a task of their own, so the menus keep working while it does.
-
-Settings has a switch for the ones you might not want: Cover Page, Hold Menu, Quick Settings,
-Battery Percent, Page Slide, Jump by Letter, Resume Mixes (all on), and Show Hidden (off). Off is
-Apple's behaviour again, from the next time the feature runs. How each feature works:
-`docs/re-notes.md`, `docs/nowplaying.md`, `docs/tcmd.md`, and for the disk
-`docs/power-and-emupod.md`.
+Settings has a switch for each one you might not want. Screenshots are from the emulator with made-up music (`tools/emupod/screenshots.py`). How it all works: `docs/`.
 
 ## Install
 
