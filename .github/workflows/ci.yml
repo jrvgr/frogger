@@ -41,8 +41,8 @@ jobs:
           gc-max-store-size-linux: 3G
       - name: Build the loader and payload
         run: nix develop -c make -C loader
-      - name: Unit tests (the ones that need Apple's firmware, and the emupod checks, skip)
-        run: nix develop -c pytest -v -m 'not emupod'
+      - name: Unit tests that don't need Apple's firmware
+        run: nix develop -c pytest -v -m 'not firmware and not emupod'
 
   emulator:
     name: Firmware and emulator tests
@@ -84,8 +84,8 @@ jobs:
           nix develop .#emu -c python3 tools/fwtool.py extract firmware/iPod_2.2.3.ipsw -o build/fw
           nix develop .#emu -c make -C loader
       # --require-firmware: a missing firmware file fails the job instead of skipping its tests.
-      - name: Unit tests, all
-        run: nix develop .#emu -c pytest -v --require-firmware -m 'not emupod'
+      - name: Unit tests that need Apple's firmware (the rest ran in the build job)
+        run: nix develop .#emu -c pytest -v --require-firmware -m 'firmware and not emupod'
       - name: Test cards
         run: nix develop .#emu -c python3 tools/emupod/mkcards.py
       - name: Emulator tests
