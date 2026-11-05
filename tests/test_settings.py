@@ -58,6 +58,8 @@ class SettingsTest(unittest.TestCase):
         for name in ("FROGGER_ITEM_HIDDEN", "FROGGER_STR_HIDDEN", "FROGGER_ITEM_LETTERS", "FROGGER_STR_LETTERS",
                      "FROGGER_ITEM_RESUME", "FROGGER_STR_RESUME"):
             self.assertNotIn(self.k[name], used, name)
+        for name in ("FROGGER_ITEM_FLASH", "FROGGER_STR_FLASH", "FROGGER_STR_AUTO"):
+            self.assertNotIn(self.k[name], used, name)
         for i in range(self.k["FEATURES"]):          # the feature switches: item and label ids
             self.assertNotIn(self.k["FROGGER_ITEM_FEATURE"] + i, used, "feature item %d" % i)
             self.assertNotIn(self.k["FROGGER_STR_FEATURE"] + i, used, "feature label %d" % i)

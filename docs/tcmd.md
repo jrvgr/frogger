@@ -218,6 +218,11 @@ the UI is up. Each takes effect the next time the feature runs, no restart:
 | Page Slide | `slide_begin` | the page switch as it's drawn |
 | Lock Cover | `lock_tick`, a few times a second | Hold is stock: the lock in the title bar |
 
+After them, **Flash Storage** (item `0x2909`, label `0x3f26`, `NN` `0x19`) has three values: Select
+steps Off, Auto, On (`setting_set` turns the toggle message into the next one; Auto is our string
+`0x3f27`, served by `frogger_resource` like the labels). It's kept in prefs bits 28-29. What it does:
+power-and-emupod.md, Part D.
+
 ### On the disk: `iPod_Control/Device/Preferences` (**confirmed** on a device)
 
 Apple saves the prefs struct to `iPod_Control/Device/Preferences` (2,872 bytes on 2.3), **starting
@@ -234,6 +239,7 @@ little-endian u32 at **file offset `0xafc`**, and all of Frogger's switches live
 | 19 + `FEATURE_*` (19–23) | Cover Page, Hold Menu, Quick Settings, Battery Percent, Page Slide | Off |
 | 24–26 | the backlight timer's last value other than Off and Always On | 0 = none yet |
 | 27 | Lock Cover (`FEATURE_LOCK`) | Off |
+| 28–29 | Flash Storage (`payload/flash.c`): 0 Off, 1 Auto, 2 On | (a value, not a flag) |
 
 Found on a real iPod 3G (2026-11-03): with a copy of the file taken, Settings › Show Hidden was
 switched On, the iPod put to sleep (hold Play) and remounted; the only change in the file was bit 16
@@ -249,13 +255,13 @@ appears on the card (`persist.py` keeps the setting some other way). Use a devic
 about the saved file.
 
 Settings, like every list, opens on the row it was last left on: scripts scroll to the top
-first (`switches.py`). Ten Frogger rows now; a "Frogger" submenu (above) would tidy them.
+first (`switches.py`). Eleven Frogger rows now; a "Frogger" submenu (above) would tidy them.
 
 ### Not done yet
 
 - A device test of the feature switches.
-- Bits 28 and up of the prefs flags are still free (16-23 and 27 Frogger's switches, 24-26 the
-  backlight timer's last value).
+- Bits 30 and 31 of the prefs flags are still free (16-23 and 27 Frogger's switches, 24-26 the
+  backlight timer's last value, 28-29 Flash Storage).
 
 ## The hold menu (**working in emupod**, `payload/holdmenu.c`)
 

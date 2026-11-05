@@ -348,10 +348,10 @@ class BootTest(unittest.TestCase):
         # Settings' bundle index entry now points at the payload's copy with our item (loader/settings.c)
         menu = syms["settings_menu"]
         entry = 0x182258
-        self.assertEqual(struct.unpack_from("<3I", ram, entry), (0x278d, menu - (0x181d20 + 0x313c), 4 + 23 * 40))
-        self.assertEqual(struct.unpack_from("<I", ram, menu)[0], 23)
-        # after Clicker (row 8): Show Hidden, Jump by Letter, Resume Mixes, then the six feature switches
-        for row, item in enumerate(range(0x2900, 0x2909), 9):
+        self.assertEqual(struct.unpack_from("<3I", ram, entry), (0x278d, menu - (0x181d20 + 0x313c), 4 + 24 * 40))
+        self.assertEqual(struct.unpack_from("<I", ram, menu)[0], 24)
+        # after Clicker (row 8): Show Hidden, Jump by Letter, Resume Mixes, then the six feature switches and Flash Storage
+        for row, item in enumerate(range(0x2900, 0x290a), 9):
             self.assertEqual(struct.unpack_from("<I", ram, menu + 4 + row * 40 + 24)[0], item)
         # Now Playing's View index entry points at the copy with the cover art (loader/nowplaying.c):
         # Apple's 9 elements unchanged, then the art BMap (id 0x3f01) as a 10th
