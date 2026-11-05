@@ -52,10 +52,10 @@ index c2639fb..edb3149 100644
      #[inline(always)]
      fn skip_enabled(&self) -> bool {
 diff --git a/rust/pp5002/src/ata.rs b/rust/pp5002/src/ata.rs
-index e76af14..2260226 100644
+index e76af14..7acaeb6 100644
 --- a/rust/pp5002/src/ata.rs
 +++ b/rust/pp5002/src/ata.rs
-@@ -105,6 +105,13 @@ pub struct Ata {
+@@ -105,6 +105,17 @@ pub struct Ata {
      /// the device control register's last value (bit 2 = SRST)
      devctl: u32,
      pub resets: u64,
@@ -66,19 +66,26 @@ index e76af14..2260226 100644
 +    /// the emulated time the hang ends (u64::MAX: only SRST ends it); 0: not hung
 +    hung_until: u64,
 +    pub hangs: u64,
++    /// IDENTIFY overrides (env EMUPOD_ATA_ID, native builds): "w<N>=<value>" words and "model=<text>", comma-separated,
++    /// e.g. "w217=1,model=SanDisk SDSSDP064G" for flash or "w217=4200,model=TOSHIBA MK4004GAH" for a hard drive
++    pub id_words: Vec<(usize, u32)>,
++    pub id_model: Option<String>,
  }
  
  fn slot(a: u32) -> usize {
-@@ -169,9 +176,38 @@ impl Ata {
+@@ -169,7 +180,39 @@ impl Ata {
              intrq: false,
              devctl: 0,
              resets: 0,
 +            hang_arm: Self::hang_env(),
 +            hung_until: 0,
 +            hangs: 0,
++            id_words: Vec::new(),
++            id_model: None,
          }
-     }
- 
++        .with_id_env()
++    }
++
 +    #[cfg(not(target_arch = "wasm32"))]
 +    fn hang_env() -> Option<(u32, u64)> {
 +        let v = std::env::var("EMUPOD_ATA_HANG").ok()?;
@@ -103,12 +110,53 @@ index e76af14..2260226 100644
 +            self.hung_until = 0;
 +        }
 +        self.hung_until != 0
+     }
+ 
+     fn sector(&self, l: u64) -> [u8; 512] {
+@@ -210,7 +253,7 @@ impl Ata {
+         };
+         put(20, "OPENPOD00000001", 10);
+         put(46, "1.0", 4);
+-        put(54, "openpod disk", 20);
++        put(54, self.id_model.as_deref().unwrap_or("openpod disk"), 20);
+         let mut sw = |i: usize, v: u32| {
+             w[i * 2] = v as u8;
+             w[i * 2 + 1] = (v >> 8) as u8;
+@@ -231,9 +274,33 @@ impl Ata {
+                 sw(100 + i, ((self.total >> (16 * i)) & 0xffff) as u32);
+             }
+         }
++        for &(i, v) in &self.id_words {
++            if i < 256 {
++                w[i * 2] = v as u8;
++                w[i * 2 + 1] = (v >> 8) as u8;
++            }
++        }
+         w.to_vec()
+     }
+ 
++    fn with_id_env(mut self) -> Ata {
++        #[cfg(not(target_arch = "wasm32"))]
++        if let Ok(spec) = std::env::var("EMUPOD_ATA_ID") {
++            for part in spec.split(',') {
++                if let Some(m) = part.strip_prefix("model=") {
++                    self.id_model = Some(m.to_string());
++                } else if let Some((k, v)) = part.strip_prefix('w').and_then(|kv| kv.split_once('=')) {
++                    let v = v.trim();
++                    let v = if let Some(h) = v.strip_prefix("0x") { u32::from_str_radix(h, 16) } else { v.parse() };
++                    if let (Ok(k), Ok(v)) = (k.parse::<usize>(), v) {
++                        self.id_words.push((k, v));
++                    }
++                }
++            }
++        }
++        self
 +    }
 +
-     fn sector(&self, l: u64) -> [u8; 512] {
-         if let Some(s) = self.overlay.get(&l) {
-             return *s;
-@@ -251,6 +287,10 @@ impl Ata {
+     fn wait(&mut self, now: u64, us: u64) {
+         if us != 0 {
+             self.ready_at = now + us;
+@@ -251,6 +318,10 @@ impl Ata {
      }
  
      pub fn status(&mut self, now: u64) -> u32 {
@@ -119,7 +167,7 @@ index e76af14..2260226 100644
          if self.bsy > 0 {
              self.bsy -= 1;
              self.bsy_served += 1;
-@@ -371,10 +411,23 @@ impl Ata {
+@@ -371,10 +442,23 @@ impl Ata {
          }
      }
  
@@ -143,7 +191,7 @@ index e76af14..2260226 100644
              self.r = [1, 1, 0, 0, 0, 0, 0, 0];
              self.hob = [0; 4];
              self.err = 1;
-@@ -402,6 +455,10 @@ impl Ata {
+@@ -402,6 +486,10 @@ impl Ata {
      }
  
      fn cmd(&mut self, mut c: u32, now: u64) {
@@ -154,7 +202,7 @@ index e76af14..2260226 100644
          let opcode = c;
          let (n, lba): (u64, u64);
          if let Some(c2) = Self::ext(c) {
-@@ -443,6 +500,19 @@ impl Ata {
+@@ -443,6 +531,19 @@ impl Ata {
              self.log.push((opcode, self.feat, n as u32, lba, "STALL (drive powered down)"));
              return;
          }

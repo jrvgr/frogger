@@ -216,6 +216,11 @@ the UI is up. Each takes effect the next time the feature runs, no restart:
 | Battery Percent | `battery_state`, `battery_resource` | Apple's state and level bitmaps, from the next battery reading |
 | Page Slide | `slide_begin` | the page switch as it's drawn |
 
+After them, **Flash Storage** (item `0x2908`, label `0x3f25`, `NN` `0x18`) has three values: Select
+steps Off, Auto, On (`setting_set` turns the toggle message into the next one; Auto is our string
+`0x3f26`, served by `frogger_resource` like the labels). It's kept in prefs bits 27-28. What it does:
+power-and-emupod.md, Part D.
+
 ### On the disk: `iPod_Control/Device/Preferences` (**confirmed** on a device)
 
 Apple saves the prefs struct to `iPod_Control/Device/Preferences` (2,872 bytes on 2.3), **starting
@@ -231,6 +236,7 @@ little-endian u32 at **file offset `0xafc`**, and all of Frogger's switches live
 | 18 | Resume Mixes | Off |
 | 19 + `FEATURE_*` (19–23) | Cover Page, Hold Menu, Quick Settings, Battery Percent, Page Slide | Off |
 | 24–26 | the backlight timer's last value other than Off and Always On | 0 = none yet |
+| 27–28 | Flash Storage (`payload/flash.c`): 0 Off, 1 Auto, 2 On | (a value, not a flag) |
 
 Found on a real iPod 3G (2026-11-03): with a copy of the file taken, Settings › Show Hidden was
 switched On, the iPod put to sleep (hold Play) and remounted; the only change in the file was bit 16
@@ -251,8 +257,8 @@ first (`switches.py`). Nine Frogger rows now; a "Frogger" submenu (above) would 
 ### Not done yet
 
 - A device test of the feature switches.
-- Bits 27 and up of the prefs flags are still free (16-23 Frogger's switches, 24-26 the
-  backlight timer's last value).
+- Bits 29 and up of the prefs flags are still free (16-23 Frogger's switches, 24-26 the
+  backlight timer's last value, 27-28 Flash Storage).
 
 ## The hold menu (**working in emupod**, `payload/holdmenu.c`)
 

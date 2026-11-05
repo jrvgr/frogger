@@ -76,6 +76,12 @@ void settings_install(void)
                 item[6] = FROGGER_ITEM_FEATURE + f;
                 item[8] = FROGGER_STR_FEATURE + f;
             }
+            item = &dst[n];                             /* Flash Storage: Off, Auto, On */
+            for (unsigned w = 0; w < MENU_ITEM_WORDS; w++)
+                dst[n++] = src[1 + CLICKER * MENU_ITEM_WORDS + w];
+            item[5] = (0x03130000u + (FEATURES << 16)) | FROGGER_STR_FLASH;
+            item[6] = FROGGER_ITEM_FLASH;
+            item[8] = FROGGER_STR_FLASH;
         }
     }
     e[1] = PAYLOAD_SYM_SETTINGS_MENU - (BUNDLE + BUNDLE_DATA);

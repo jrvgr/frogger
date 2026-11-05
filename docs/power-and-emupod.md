@@ -189,7 +189,7 @@ It is likely the boot or disk-mode low-level path (**likely**). The IDE FIFO cop
 
 ### B.2 Disk idle timeout and drive power GPIO
 
-- **Idle timeout: 12.8 s** (measured in emulation, Part A); its code is not located. Known
+- **Idle timeout: 12.8 s** (measured in emulation, Part A); found since: the disk arbiter, Part D. Known
   (**confirmed**): the drive's own standby timer is turned off (IDLE `0xE3` with count 0, `0xdebac`),
   so the timeout lives in osos. It works by posting message type 14, sub-op 2, to the disk-power
   task (`0x13bc2c`). `0xfac38` is the only type-14 message builder (every function scanned for an
@@ -245,7 +245,8 @@ It is likely the boot or disk-mode low-level path (**likely**). The IDE FIFO cop
 - Spin-up: implicit on the next command. The driver waits up to 3.1 s (`0x97830`) after a
   reset or wake, and up to 31 s after boot (`0x9439c`). The default command timeout is 10 s. confirmed.
 - Refill trigger: less than 20 s of cached audio left ahead of the play position (`0x45924`, likely).
-- Idle timeout: 12.8 s after the last disk access (emulation, confirmed); its code is not located.
+- Idle timeout: 12.8 s after the last disk access (emulation, confirmed); it's the disk arbiter's
+  per-client holds, located in Part D.
   The spin-down path goes through the message system (type 14, sub-op 2 → `0x134bc8`).
 - Read-ahead size per wake: not located or measured.
 
@@ -313,3 +314,96 @@ otherwise from a later tick once it is (and a Hide waiting still goes out with P
 drive; 2.7 s later, drive still hung, Menu and the wheel move Songs' highlight, and after the
 recovery song 2's cover is up. With the read forced back onto the UI (FroggerArt marked
 unavailable) the same run fails: the wheel does nothing during the hang.
+
+## Part D: Flash Storage (working in emupod)
+
+Settings › Flash Storage (`payload/flash.c`; Off, Auto, On; **Off by default**) lets a flash mod's
+disk go to standby sooner. Measured with `tools/emupod/flash.py` (the check) and
+`tools/emupod/probes/flashplay.py` (the long play).
+
+A flash mod is still an ATA drive to the iPod: the SD or CF card sits behind an IDE bridge
+(iFlash and the like), which answers IDENTIFY, takes STANDBY IMMEDIATE (or ignores it) and sets
+BSY as it likes. Nothing here talks to the card itself, and disk.c's soft reset (Part C) goes
+through the same bridge.
+
+### D.1 Where the 12.8 s comes from: the disk arbiter (**confirmed**, code and emupod)
+
+The idle timeout isn't one number. The task at **`0x13bc94`** (mailbox 19) arbitrates the disk
+between 19 clients. A client says **busy** with `0x5790c(client)` (message kind 0) and **done,
+hold the disk `ms` more** with **`0x57820(client, ms)`** (kind 2, stored as `ms / 10 + 1` ticks
+of 10 ms). Per client the arbiter keeps a flag (`0x420a5c[19]`) and the ticks left (`0x420a70[19]`,
+−1 while busy), waits for the next message or the shortest hold left (`0x40b8(19, ..., ticks)`),
+and when no client holds the disk any more it builds the type-14 message **sub-op 2** inline
+(`0x13bf58..0x13bfb0`) and sends it to the disk-power task with `0xbb514(msg, 5)`: STANDBY
+IMMEDIATE (`0x134c58`). While some client still holds it, it sends sub-op 4 instead. That's the
+inline sub-op 2 message Part B was looking for.
+
+The holds, by caller: client 1 (database load, `0xe4454`) 15000 ms; client 6
+(TrackCacheReadTask, `0xe9cac`) 10000; client 4 (`0xbc18c`) 3000; clients 2 (playback
+`0x94b34`, `0x46d38`), 3 (`0xe4c1c`) and 10 2000; 8, 11, 13, 15 1000; 12 952; 7 100; 3 (`0xe1ed0`)
+and 9 0. So the standby comes 2 s after a music-cache refill during playback (client 2), about
+10 s after boot's database load (the 12.8 s of Part A: client 1's 15 s from 2.8 s), and up to
+10-15 s after other disk use.
+
+### D.2 What the switch does
+
+- **Holds cut to 1 s** (`flash_hold_hook`, a B hook on `0x57820`'s first instruction): with the
+  switch in effect, any `ms` over 1000 becomes 1000. The arbiter works as before; it just runs out
+  sooner. A drive that needs a command after standby gets it as before: the driver's wake is
+  implicit in the next command.
+- **Detection for Auto** (`flash_id_hook`, BL at `0x9dbac` in the dispatcher's IDENTIFY case, as
+  the command ends): at that point `ata+0x17c` points just past the 512 bytes read, `ata+0x190` is
+  the error. `flash.c` keeps word 0, word 217 and the model (words 27-46) in `flash_id_w0`,
+  `flash_id_rpm`, `flash_id_model`. Auto acts when word 217 is 1 (non-rotating), word 0 is
+  `0x848a` (CompactFlash) or the model has FLASH, SDCF, SSD, SD CARD, SDHC, SDXC or CF CARD in it,
+  or starts with TS and a digit (Transcend CF); a drive that reports a rotation rate is always left
+  alone. A bridge may report none of these (it answers for the card, and old CF cards and bridges
+  leave word 217 at 0), so Auto can miss a flash mod: use On. That's why the default is Off, not
+  Auto. **Not known without devices:** what iFlash and other bridges put in these words.
+- The switch is read through the prefs (bits 27-28, `frogger_flash_mode()`); until they're up it
+  counts as Off. In emupod they're up at 2.64 s, before boot's first hold (client 1, at 2.79 s), so
+  a saved On or Auto covers boot too.
+
+### D.3 Measured in emupod
+
+`probes/flashplay.py 760`: boot, Music › Songs, Tone B (12 min, 320 kbps) played for 760 s,
+777 s in all; IDENTIFY word 217 = 1; the switch set as soon as the prefs are up (as a saved
+value would be). Awake = from the first command after a STANDBY (or from 1 s) to the next STANDBY.
+
+| | STANDBYs | last command → STANDBY | disk awake | reads |
+| --- | --- | --- | --- | --- |
+| Off (Apple) | 1, at 24.5 s | 2.05 s | **22.2 s** | 1741 (44973 sectors) |
+| On (or Auto on flash) | 3, at 3.8, 7.7, 23.5 s | 0.86, 1.03, 1.03 s | **11.4 s** | 1741 (44973 sectors) |
+
+Half the awake time for the same reads: Apple's holds (15 s from the database load, then the
+menus' and the refill's) chain into one 22 s stretch; cut to 1 s, the disk sleeps between boot,
+the menus and the refill, at the cost of two more wakes (each instant on a bridge that answers at
+once). During playback alone the saving is 1 s per refill (2.05 → 1.03 s). emupod's audio
+doesn't run the music cache down (Part A: "audio stops early"), so a play shows only the first
+refill; on a device a refill comes about every 9-10 minutes of 320 kbps music (23 MB of cache),
+each 1 s shorter, and after any browsing that touches the disk 1-14 s shorter.
+
+`flash.py` (the check): Select steps Off, Auto, On, Off and the row shows each value; Tone A's
+refill ends 1.02 s before the STANDBY with Auto on a flash IDENTIFY and with On on emupod's plain
+one (no rotation rate), and 2.05 s (Apple's) with Off and with Auto on a hard drive's IDENTIFY
+(word 217 = 4200, model TOSHIBA MK4004GAH). `EMUPOD_ATA_ID` (in `emupod-gen3.patch`) sets the
+IDENTIFY words and model: `"w217=1,model=..."`.
+
+What that's worth on a device depends on the bridge: only one that cuts the card's power (or puts
+it in its own sleep) on STANDBY IMMEDIATE saves anything; one that ignores it saves nothing and
+loses nothing. Needs a device test, ideally with a current meter.
+
+### D.4 What was looked at and left alone
+
+- **Boot spin-up wait** (`0x9439c`, up to 31 s after boot) and the **wait after a wake**
+  (`0x97830`, 3.1 s): both are `0x13f984`/`0x13fa14`, which poll BSY and return as soon as it
+  clears. They are upper bounds, not delays: a bridge that answers at once costs nothing there,
+  and shortening them would only fail a slow one. In emupod the boot wait (`n = 2900000`) ends
+  at once. disk.c's reset wait is unchanged.
+- **Read-ahead.** A refill reads until the cache is full (Part B.3): on music-card.img, 47028
+  sectors (23 MB) in 6.6 s, starting with less than 20 s of audio left. The bytes read per song
+  are the same whatever the refill size, so what a smaller refill changes is the number of wakes,
+  each costing a hold (now 1 s) plus the bridge's wake. Bigger refills aren't possible (the cache
+  is what's left of RAM), smaller ones only add wakes: unchanged. Lowering the 20 s low-water mark
+  saves nothing either (same bytes, same wakes) and risks a gap if a wake is slow.
+

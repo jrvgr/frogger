@@ -41,6 +41,7 @@ this folder.
 | Nothing writes Apple's image (read-only on a device) | `readonly.py` |
 | The payload's memory stays free of Apple's heap | `heaptop.py` |
 | The disk coming back after it stops answering (SRST, re-init, retry) | `diskhang.py` |
+| Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto | `flash.py` |
 
 Shown in screenshots only, not checked yet: covers changing on Next (`artplay.py`), Jump by Letter
 (`letters.py`), album artists (`albumartist.py`), Add to Playlist (`playlists.py`), the Now Playing

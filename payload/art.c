@@ -417,6 +417,13 @@ const void *frogger_resource(uint32_t fourcc, uint32_t id, uint32_t *size)
         *size = (uint32_t)(e - s);
         return s;
     }
+    if (fourcc == FOURCC_STR && (id == FROGGER_STR_FLASH || id == FROGGER_STR_AUTO)) {
+        const char *s = id == FROGGER_STR_FLASH ? frogger_label_flash : frogger_label_auto, *e = s;
+        while (*e++)
+            ;
+        *size = (uint32_t)(e - s);
+        return s;
+    }
     if (fourcc == FOURCC_STR && id == FROGGER_STR_RESUME) {
         *size = frogger_label_resume_size;
         return frogger_label_resume;
