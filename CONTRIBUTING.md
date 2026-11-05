@@ -12,6 +12,7 @@ Pillow and pytest):
     make -C loader                         # build/loader/frogger-loader.bin
     make -C loader DEBUG=1                 # with the crash recorder (payload/debug.c)
     pytest                                 # tests/; the ones that need Apple's firmware skip without it
+    pytest --cov --cov-report=term         # the same, with the coverage of tools/
 
 Install your build the same way as a release's (README, Install), with
 `build/loader/frogger-loader.bin`. `tools/backup.sh` and `tools/restore.sh` save and write back
@@ -82,7 +83,12 @@ What has to pass:
   `shellcheck tools/*.sh tools/emupod/*.sh`): the **CI** checks.
 - The emulator checks (`pytest -n auto -m emupod`; CI runs them with the firmware from Apple).
   A new or changed feature needs a check of its own in `tools/emupod/` that exits 1 when
-  something's wrong, listed in `runtests.py`. Screenshots alone don't count.
+  something's wrong, listed in `runtests.py`'s `FEATURES` with the payload files it goes through.
+  Screenshots alone don't count.
+
+A pull request's CI run adds a **Test results** check (every test, failures at their line), a
+summary per job and one comment with the coverage of `tools/` and which features have an
+emupod check. It's a report: no coverage number fails a job.
 - Tried on a real 3G, or labelled `needs device test`. The emulator doesn't model everything:
   audio stops early, the screen never goes dark, Apple's image isn't read-only.
 

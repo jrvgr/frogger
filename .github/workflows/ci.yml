@@ -55,6 +55,7 @@ jobs:
           filters: |
             ci: &ci
               - .github/workflows/ci.yml
+              - .github/scripts/**
               - flake.nix
               - flake.lock
               - pyproject.toml
@@ -107,8 +108,22 @@ jobs:
           gc-max-store-size-linux: 3G
       - name: Build the loader and payload
         run: nix develop -c make -C loader
+      # Each pytest job leaves its JUnit XML (and the coverage of tools/) in build/results for the
+      # report job below, and writes its own summary.
       - name: Unit tests that don't need Apple's firmware
-        run: nix develop -c pytest -v -m 'not firmware and not emupod'
+        run: nix develop -c pytest -v -m 'not firmware and not emupod' --junitxml=build/results/build.xml --cov --cov-report=
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          python3 .github/scripts/report.py junit "Unit tests (no firmware)" build/results/build.xml
+          [ ! -f .coverage ] || mv .coverage build/results/.coverage.build
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: results-build
+          path: build/results
+          include-hidden-files: true
+          retention-days: 7
 
   # install.py's raw-disk code, podinfo and coverart on the other OSes people install from
   # (the build job runs them on Linux). Plain Python, no nix: what a user has.
@@ -128,7 +143,16 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install pytest pillow
       - name: install.py, podinfo and coverart tests
-        run: python -m pytest -v -m "not firmware and not emupod" tests/test_install.py tests/test_podinfo.py tests/test_coverart.py
+        run: python -m pytest -v -m "not firmware and not emupod" tests/test_install.py tests/test_podinfo.py tests/test_coverart.py --junitxml=build/results/portable-${{ matrix.os }}.xml
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: python .github/scripts/report.py junit "Unit tests on ${{ matrix.os }}" build/results/portable-${{ matrix.os }}.xml
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: results-portable-${{ matrix.os }}
+          path: build/results
+          retention-days: 7
 
   emulator:
     name: Firmware and emulator tests
@@ -184,11 +208,25 @@ jobs:
           nix develop .#emu -c make -C loader
       # --require-firmware: a missing firmware file fails the job instead of skipping its tests.
       - name: Unit tests that need Apple's firmware (the rest ran in the build job)
-        run: nix develop .#emu -c pytest -v --require-firmware -m 'firmware and not emupod'
+        run: nix develop .#emu -c pytest -v --require-firmware -m 'firmware and not emupod' --junitxml=build/results/firmware.xml --cov --cov-report=
       - name: Test cards
-        run: nix develop .#emu -c python3 tools/emupod/mkcards.py
+        run: nix develop .#emu -c python3 -m coverage run tools/emupod/mkcards.py
+      # The checks run as Python processes of their own; coverage follows them (pyproject.toml).
       - name: Emulator tests
-        run: nix develop .#emu -c pytest -v -n auto --durations=0 --require-firmware -m emupod
+        run: nix develop .#emu -c pytest -v -n auto --durations=0 --require-firmware -m emupod --junitxml=build/results/emupod.xml --cov --cov-append --cov-report=
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          python3 .github/scripts/report.py junit "Unit tests that need the firmware" build/results/firmware.xml
+          python3 .github/scripts/report.py junit "Emulator checks" build/results/emupod.xml --checks
+          [ ! -f .coverage ] || mv .coverage build/results/.coverage.emulator
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: results-emulator
+          path: build/results
+          include-hidden-files: true
+          retention-days: 7
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -196,3 +234,61 @@ jobs:
           path: |
             build/emupod-work/logs
             build/emupod-work/*.png
+
+  # Every job's tests in one "Test results" check (failures annotated at their file and line), the
+  # coverage of tools/ from the build and emulator jobs combined, in the summary and in one
+  # comment on the pull request that each run updates. Reports only: it never fails for a number.
+  report:
+    name: Test report
+    needs: [build, portable, emulator]
+    if: ${{ !cancelled() && (needs.build.result != 'skipped' || needs.emulator.result != 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write         # the Test results check
+      pull-requests: write  # the coverage comment
+    env:
+      # Pull requests from Dependabot and forks get a read-only token: the summary only, then.
+      CAN_WRITE: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
+      COVERAGE: coverage==7.17.0  # nixpkgs' (flake.lock), which wrote the data
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: results-*
+          path: results
+          merge-multiple: true
+      - uses: EnricoMi/publish-unit-test-result-action/linux@v2
+        if: env.CAN_WRITE == 'true'
+        with:
+          files: results/*.xml
+          check_name: Test results
+          comment_mode: 'off'
+      - name: Coverage
+        id: cov
+        run: |
+          shopt -s nullglob
+          data=(results/.coverage.*)
+          [ ${#data[@]} -gt 0 ] || { echo "No coverage data (the build and emulator jobs didn't get that far)."; exit 0; }
+          pipx run --spec "$COVERAGE" coverage combine --keep "${data[@]}"
+          pipx run --spec "$COVERAGE" coverage json -q -o coverage.json
+          python3 .github/scripts/report.py -o coverage.md coverage coverage.json results
+          cat coverage.md >> "$GITHUB_STEP_SUMMARY"
+          echo "done=true" >> "$GITHUB_OUTPUT"
+      - name: Coverage comment on the pull request
+        if: github.event_name == 'pull_request' && env.CAN_WRITE == 'true' && steps.cov.outputs.done == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          marker='<!-- frogger-coverage -->'
+          printf '%s\n%s\n<sub>%s, [run](%s)</sub>\n' "$marker" "$(cat coverage.md)" "${HEAD::7}" "$RUN" > comment.md
+          id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+                 --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md --jq .html_url
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@comment.md --jq .html_url
+          fi

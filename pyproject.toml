@@ -1,5 +1,5 @@
-# Only pytest's settings: Frogger isn't a Python package. `pytest` (nix develop) runs tests/,
-# `pytest -n auto` spreads it over the cores (pytest-xdist).
+# pytest's and coverage.py's settings: Frogger isn't a Python package. `pytest` (nix develop) runs
+# tests/, `pytest -n auto` spreads it over the cores (pytest-xdist), `pytest --cov` measures tools/.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra"]  # list every skip and its reason at the end
@@ -7,3 +7,19 @@ markers = [
     "firmware(path): needs a file made from Apple's firmware (default build/fw/osos.img); skips without it",
     "emupod: an emulator check from tools/emupod (nix develop .#emu, setup.sh, mkcards.py); -m 'not emupod' leaves them out",
 ]
+junit_family = "xunit1"  # --junitxml writes each test's file and line, for CI's annotations
+
+# Coverage of the Python tools (CI runs pytest --cov in the build and emulator jobs and combines
+# the two). The payload is C in the emulator, out of coverage.py's reach: CI's summary lists which
+# features have an emupod check instead (tools/emupod/runtests.py, FEATURES).
+[tool.coverage.run]
+source_dirs = ["tools"]  # every .py in it, run or not
+omit = ["*/tools/re/*", "*/tools/emupod/probes/*"]  # RE helpers and one-off traces, not tools
+# The emupod checks and mkimage.py run as Python processes of their own, the checks from
+# tools/emupod: so the paths are absolute (relative_files would be relative to that folder), the
+# same in CI's jobs.
+patch = ["subprocess"]
+
+[tool.coverage.report]
+skip_empty = true
+include_namespace_packages = true  # the folders in tools/ have no __init__.py: list their unrun files too
