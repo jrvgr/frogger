@@ -21,7 +21,7 @@ def mhod(kind, text):
     return struct.pack("<4sIII8x", b"mhod", 0x18, 0x18 + len(body), MHOD_TYPES[kind]) + body
 
 
-def mhit(tid, fields, size, ms, bitrate, bookmark=0):
+def mhit(tid, fields, size, ms, bitrate, bookmark=0, dbid=None):
     mh = b"".join(mhod(k, v) for k, v in fields.items())
     h = bytearray(0x9c)
     struct.pack_into("<4sIIIII", h, 0, b"mhit", 0x9c, 0x9c + len(mh), len(fields), tid, 1)
@@ -29,7 +29,7 @@ def mhit(tid, fields, size, ms, bitrate, bookmark=0):
     h[0x1c] = 1; h[0x1d] = 1
     struct.pack_into("<IIIIIII", h, 0x24, size, ms, 1, 1, 2026, bitrate, 44100 << 16)
     struct.pack_into("<I", h, 0x6c, bookmark)            # bookmark time, ms
-    struct.pack_into("<Q", h, 0x70, 0x1000 + tid)
+    struct.pack_into("<Q", h, 0x70, 0x1000 + tid if dbid is None else dbid)   # the dbid
     return bytes(h) + mh
 
 
@@ -40,12 +40,12 @@ def mhip(tid, pos):
     return bytes(h) + body
 
 
-def mhyp(name, tids, master=True):
+def mhyp(name, tids, master=True, pid=None):
     t = mhod("title", name)
     items = b"".join(mhip(tid, i + 1) for i, tid in enumerate(tids))
     h = bytearray(0x6c)
     struct.pack_into("<4sIIIII", h, 0, b"mhyp", 0x6c, 0x6c + len(t) + len(items), 1, len(tids), int(master))
-    struct.pack_into("<Q", h, 0x1c, 0xabcdef if master else 0xabcdf0)
+    struct.pack_into("<Q", h, 0x1c, pid if pid is not None else 0xabcdef if master else 0xabcdf0)
     struct.pack_into("<H", h, 0x28, 1)
     return bytes(h) + t + items
 

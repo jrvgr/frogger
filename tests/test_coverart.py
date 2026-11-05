@@ -95,11 +95,16 @@ class CoverartTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             coverart.main([str(self.root), "--out", str(out), *args])
         d = out.read_bytes()
-        magic, version, size, positions, images, image_bytes, _ = struct.unpack_from("<IHHIIII", d, 0)
-        self.assertEqual((magic, version, size, positions, image_bytes), (0x41475246, 1, 72, 8, coverart.BYTES))
-        off = 24 + 16
+        magic, version, size, entries, images, image_bytes, _ = struct.unpack_from("<IHHIIII", d, 0)
+        self.assertEqual((magic, version, size, image_bytes), (0x41475246, 2, 72, coverart.BYTES))
+        off = 24 + 24 * entries                     # version 2: a (key, image) per song with a cover
         self.assertEqual(len(d), off + images * coverart.BYTES)
-        return d, struct.unpack_from("<8H", d, 24), images, off
+        db = podinfo.Database(str(self.itunes / "iTunesDB"))
+        art = podinfo.FroggerArt(d)
+        self.assertEqual(len(art.table), entries)
+        self.assertEqual({k.id for k, _ in art.table}, {db.tracks[p].id for p in art.covers(db)})
+        covers = art.covers(db)
+        return d, tuple(covers.get(p, 0xffff) for p in range(len(db.tracks))), images, off
 
     def test_froggerart(self):
         d, table, images, off = self.froggerart("--covers", str(self.covers))

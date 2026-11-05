@@ -23,36 +23,39 @@ extern struct hide_state hide_state;
 /* iPod_Control/iTunes/FroggerHidden: the songs hidden (the hold menu's
  * Hide) or shown again (Show) on the iPod, for Crate to read on the next
  * sync. This 20-byte header, then `count` entries of entry_size bytes: the
- * track's position in the iTunesDB (the mhit's index in the mhlt, from 0),
- * its track id (mhit+0x10) and flags (HIDE_ENTRY_SHOWN: shown, else hidden;
- * version 1 had no flags word, entry_size 8, all hidden). All u32,
- * little-endian. stamp is the iTunesDB's (0x77600, as Apple's On-The-Go
- * files carry): after a sync it no longer matches and the file is ignored. */
+ * track's key (tracks.h) and flags (HIDE_ENTRY_SHOWN: shown, else hidden).
+ * All u32, little-endian. stamp is the iTunesDB's (0x77600) when it was
+ * written, for information: version 3 is read whatever it says.
+ * Versions 1 and 2 (read, never written) named the track by its position in
+ * the iTunesDB (the mhit's index in the mhlt, from 0) and track id (mhit+0x10),
+ * and version 2 added the flags word (entry_size 8, 12); they are read only
+ * when stamp is the loaded iTunesDB's. docs/file-formats.md. */
 #define HIDE_FILE_MAGIC   0x48475246u   /* "FRGH" */
-#define HIDE_FILE_VERSION 2
+#define HIDE_FILE_VERSION 3
 #define HIDE_ENTRY_SHOWN  1u
 struct hide_file_header {
     uint32_t magic;
-    uint16_t version, entry_size;       /* 2, 12 */
+    uint16_t version, entry_size;       /* 3, 24 */
     uint32_t stamp;
     uint32_t count;
     uint32_t reserved;
+};
+
+#include "tracks.h"
+struct hide_entry {
+    struct track_key key;
+    uint32_t flags;
 };
 
 void hide_reset(void);
 void hide_mark(uint32_t track);
 int hide_track(uint32_t track);
 int hide_entry(uint32_t owner, uint32_t track);
-void hide_loaded(uint32_t record, uint32_t pos, uint32_t id);
 void hide_add(uint32_t track);
 void hide_show(uint32_t track);
 void hide_save(void);
 void hide_tick(void);
 void hide_flush(void);       /* a save hide_save asked for, staged for the save task (counts_hook) */
-uint32_t hide_gen(void);
-uint32_t hide_tracks(void);
-int hide_position(uint32_t track, uint32_t *id);
-uint32_t hide_record(uint32_t pos, uint32_t id);
 #endif
 
 #endif

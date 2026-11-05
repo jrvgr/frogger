@@ -1,6 +1,6 @@
 /* Hooks from Apple's osos into the payload's C (hide.c, settings.c, art.c,
  * nowplaying.c, artist.c, queue.c, holdmenu.c, letters.c, resume.c, skips.c,
- * disk.c). Each replaces one instruction with
+ * disk.c, tracks.c). Each replaces one instruction with
  * a BL here (the table in tools/mkpayload.py), redoes that instruction,
  * and returns. Stack offsets are into the hooked function's frame, plus
  * whatever the hook pushed. */
@@ -24,11 +24,9 @@ track_hook:
     push    {r4, lr}
     mov     r0, r4
     ldr     r1, [sp, #8 + 0x4bc]
-    bl      np_track_loaded         @ where the records are, for covers (art.c)
-    mov     r0, r4
-    ldr     r1, [sp, #8 + 0x4bc]
-    ldr     r2, [sp, #8 + 0x420 + 0x10]
-    bl      hide_loaded             @ and their positions and ids (hide.c, FroggerHidden)
+    add     r2, sp, #0x400
+    add     r2, r2, #8 + 0x20       @ the mhit header, sp+0x420 before the push
+    bl      tracks_loaded           @ its position and key (tracks.c), for Frogger's files
     ldr     r0, [sp, #8 + 0x4bc]
     cmp     r0, #0
     bleq    hide_reset              @ first track: a fresh database
@@ -446,8 +444,10 @@ title_hook:
 tick_hook:
     push    {r0, r1, r2, r3, r12, lr}
     bl      letter_tick             @ letters.c
+    bl      tracks_tick             @ tracks.c: the keys' lookup, once a database has loaded
     bl      hide_tick               @ hide.c: FroggerHidden, once a database has loaded
     bl      skips_tick              @ skips.c: FroggerSkips, the same
+    bl      bookmarks_tick          @ resume.c: FroggerBookmarks, the same
     bl      playlist_tick           @ playlist.c: a playlist save that waited for the disk
     bl      np_tick                 @ nowplaying.c: a held LCD let go
     bl      lock_tick               @ lock.c: Hold on or off, the lock screen
@@ -571,6 +571,7 @@ resume_save_hook:
 counts_hook:
     push    {r0, r1, r2, r3, r12, lr}
     bl      resume_flush
+    bl      bookmarks_save          @ resume.c: FroggerBookmarks, from the bookmarks just flushed
     bl      skips_save              @ skips.c: FroggerSkips, at the same moments
     bl      hide_flush              @ hide.c: FroggerHidden, if its save is still waiting for the disk
     pop     {r0, r1, r2, r3, r12, lr}

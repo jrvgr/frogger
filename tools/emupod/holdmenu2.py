@@ -118,8 +118,8 @@ diff = [i for i in range(END) if snap[i] != now[i]]
 check("Apple's image unchanged", not diff, "%d bytes, first %#x" % (len(diff), diff[0] if diff else 0))
 out = hmcard.mtools(card, "mtype", "::/iPod_Control/iTunes/FroggerHidden", capture_output=True).stdout
 n = struct.unpack_from("<I", out, 12)[0] if len(out) >= 20 else -1
-size = struct.unpack_from("<H", out, 6)[0] if len(out) >= 20 else 0     # 12 (version 2), 8 (1)
-ids = sorted(struct.unpack_from("<I", out, 24 + size * i)[0] for i in range(max(n, 0)))
+size = struct.unpack_from("<H", out, 6)[0] if len(out) >= 20 else 0     # 24: version 3, entries by key
+ids = sorted(struct.unpack_from("<I", out, 20 + size * i + 8)[0] for i in range(max(n, 0)))   # key: dbid, id, ...
 ok = out[:4] == b"FRGH" and ids == sorted([hmcard.TID["Echo"], hmcard.TID["Bravo"]])
 print("%-44s %s" % ("FroggerHidden: Echo, Bravo", "ok" if ok else "WRONG %r %s" % (out[:4], ids)))
 sys.exit(not ok)

@@ -22,11 +22,14 @@
  * resume_save stores 0 for a track left in its last RESUME_END_MS (it played to
  * the end), and resume_flush puts the playing track's position in its
  * bookmark before the Play Counts file is written (the sleep path writes it
- * without loading another track first). hooks.S has the glue. */
+ * without loading another track first). FroggerBookmarks keeps them by key
+ * too, for a sync by an app that drops them (the end of this file). hooks.S
+ * has the glue. */
 
 #include <stdint.h>
 #include "resume.h"
 #include "settings.h"
+#include "tracks.h"
 
 #define UI_OBJECT        (*(volatile uint32_t *)0x43580c)
 #define PLAYER_ITEM      (0x2a8 / 4)
@@ -37,6 +40,7 @@
 #define TRACK_BOOKMARK   (0x60 / 4)                 /* ms, mhit+0x6c */
 #define ROOT_PLAYER      (4 / 4)
 #define ROOT_COUNTS_DIRTY 0xb41                     /* byte: 0xf4d6c writes Play Counts only if set (0xeb4b8) */
+#define db_stamp         ((uint32_t (*)(void))0x77600)
 
 /* The track record resume_flags last flagged: the one loaded, if it's ours. */
 static uint32_t resume_track;
@@ -104,4 +108,82 @@ void resume_flush(uint32_t lib)
         return;
     ((volatile uint32_t *)resume_track)[TRACK_BOOKMARK] = pos;
     *(volatile uint8_t *)(root + ROOT_COUNTS_DIRTY) = 1;
+}
+
+/* FroggerBookmarks (resume.h): the bookmarks of the long tracks, by key, so
+ * they outlast a sync by an app that doesn't carry Play Counts' bookmarks
+ * into the new iTunesDB. Written with Play Counts (counts_hook, after
+ * resume_flush), only when one has changed; read back once a new database
+ * has loaded, for the tracks that came without a bookmark of their own. */
+static const char bm_name[] = "FroggerBookmarks";
+static uint32_t bm_gen, bm_sum;
+
+/* The long tracks' bookmarks: how many, and a sum to tell a change; with
+ * `write`, each as an entry of the file (open for writing). */
+static uint32_t bm_scan(int write, uint32_t *sum)
+{
+    struct bookmark_entry e;
+    uint32_t pos, track, n = 0, s = 0;
+
+    for (pos = 0; pos < tracks_count(); pos++) {
+        track = tracks_record(pos);
+        if (word(track, TRACK_LENGTH) < RESUME_MIN_MS || !word(track, TRACK_BOOKMARK))
+            continue;
+        n++;
+        s = (s * 31 + pos) * 31 + word(track, TRACK_BOOKMARK);
+        if (write) {
+            tracks_key(pos, &e.key);
+            e.ms = word(track, TRACK_BOOKMARK);
+            file_write(&e, sizeof e);
+        }
+    }
+    *sum = s ^ n;
+    return n;
+}
+
+/* counts_hook, as Play Counts is written. */
+void bookmarks_save(void)
+{
+    struct bookmark_file_header h = { BOOKMARK_FILE_MAGIC, BOOKMARK_FILE_VERSION, sizeof(struct bookmark_entry), 0, 0, 0 };
+    uint32_t sum;
+
+    if (bm_gen != tracks_gen() || !tracks_ready())
+        return;
+    h.count = bm_scan(0, &sum);
+    if (sum == bm_sum || !file_create(bm_name))
+        return;
+    h.stamp = db_stamp();
+    file_write(&h, sizeof h);
+    bm_scan(1, &sum);
+    file_close();
+    bm_sum = sum;
+}
+
+/* tick_hook, on the UI thread (after tracks_tick). For the iTunesDB the
+ * file was written with, Play Counts has the same bookmarks already. */
+void bookmarks_tick(void)
+{
+    struct bookmark_file_header h;
+    struct bookmark_entry e;
+    uint32_t i, track, any = 0, ui = UI_OBJECT, lib;
+    int p;
+
+    if (bm_gen == tracks_gen() || !tracks_ready())
+        return;
+    bm_gen = tracks_gen();
+    if (resume_on() && file_open(bm_name)) {
+        if (file_read(&h, sizeof h) && h.magic == BOOKMARK_FILE_MAGIC && h.version == BOOKMARK_FILE_VERSION
+            && h.entry_size == sizeof e && h.stamp != db_stamp())
+            for (i = 0; i < h.count && file_read(&e, sizeof e); i++)
+                if ((p = tracks_find(&e.key)) >= 0 && (track = tracks_record((uint32_t)p)) != 0
+                    && word(track, TRACK_LENGTH) >= RESUME_MIN_MS && !word(track, TRACK_BOOKMARK)
+                    && e.ms < word(track, TRACK_LENGTH)) {
+                    ((volatile uint32_t *)track)[TRACK_BOOKMARK] = e.ms;
+                    any = 1;
+                }
+        file_close();
+    }
+    if (any && ui && (lib = word(ui, 0x1c / 4)) && word(lib, 0))
+        *(volatile uint8_t *)(word(lib, 0) + ROOT_COUNTS_DIRTY) = 1;   /* into Play Counts too */
+    bm_scan(0, &bm_sum);
 }

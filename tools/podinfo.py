@@ -10,7 +10,7 @@ iTunesDB. Plain Python 3, nothing to install. The iPod must be mounted (disk mod
     tools/podinfo.py /Volumes/IPOD hidden          # songs flagged hidden, and hidden/shown on the iPod
     tools/podinfo.py /Volumes/IPOD skips           # skip counts (FroggerSkips)
     tools/podinfo.py /Volumes/IPOD playlists       # songs added on the iPod (OTGPlaylistInfo*, FroggerPlaylist_*)
-    tools/podinfo.py /Volumes/IPOD bookmarks       # where long songs were left (Play Counts)
+    tools/podinfo.py /Volumes/IPOD bookmarks       # where long songs were left (Play Counts, FroggerBookmarks)
     tools/podinfo.py /Volumes/IPOD hide ID...      # set the hide flag on these track ids
     tools/podinfo.py /Volumes/IPOD unhide ID...    # clear it
     tools/podinfo.py /Volumes/IPOD tracks          # every track: position, id, title, artist
@@ -20,13 +20,13 @@ sync script. Positions are a track's index in the iTunesDB (from 0); ids are its
 
 hide/unhide write the iTunesDB in place (4 bytes per track) after copying it to
 iTunesDB.frogger-backup next to it. Any other syncing app (iTunes, gtkpod, ...) writes a new
-iTunesDB without the flag. Frogger's own files (FroggerHidden, FroggerSkips, FroggerPlaylist_*)
-carry the iTunesDB's time stamp, so the iPod ignores them once the database is newer: read them
-before syncing (or before hide/unhide), and carry what you want to keep into your library.
-Formats: payload/hide.h, payload/skips.h, docs/re-notes.md ("Playlists made on the iPod",
-"Bookmarks"), docs/nowplaying.md (FroggerArt)."""
+iTunesDB without the flag. Frogger's own files (FroggerHidden, FroggerSkips, FroggerBookmarks,
+FroggerPlaylist_<id>, FroggerArt) name songs by their dbid (or track id, size and length), so
+they still apply after such a sync, to the songs that are still there. Older versions of them
+(by position) only fit the iTunesDB they were written for. Every format: docs/file-formats.md."""
 
 import argparse
+import collections
 import datetime
 import os
 import shutil
@@ -45,10 +45,24 @@ def read(path):
         return f.read()
 
 
+class Key(collections.namedtuple("Key", "dbid id size ms")):
+    """How Frogger's files name a song (payload/tracks.h): the mhit's dbid (+0x70), track id
+    (+0x10), size (+0x24) and length in ms (+0x28). 20 bytes, little-endian."""
+    SIZE = 20
+
+    @classmethod
+    def unpack(cls, data, off=0):
+        return cls(*struct.unpack_from("<QIII", data, off))
+
+    def pack(self):
+        return struct.pack("<QIII", *self)
+
+
 class Track:
-    def __init__(self, pos, offset, tid, ms, bookmark, hidden, header):
+    def __init__(self, pos, offset, tid, ms, bookmark, hidden, header, dbid=0, size=0):
         self.pos, self.offset, self.id, self.ms = pos, offset, tid, ms
         self.bookmark, self.hidden, self.header = bookmark, hidden, header
+        self.dbid, self.size = dbid, size
         self.title = self.artist = self.album = self.location = ""     # location: ":iPod_Control:Music:F00:X.mp3"
 
 
@@ -59,7 +73,7 @@ class Database:
     def __init__(self, path):
         self.path = path
         self.data = read(path)
-        self.tracks, self.master = [], []
+        self.tracks, self.master, self.playlists = [], [], []
         d = self.data
         if d[:4] != b"mhbd":
             raise SystemExit(f"{path}: not an iTunesDB")
@@ -72,6 +86,10 @@ class Database:
                 self._playlists(off + hlen)
             off += total
         self.by_id = {t.id: t for t in self.tracks}
+        self.by_dbid = {}
+        for t in self.tracks:
+            if t.dbid:
+                self.by_dbid.setdefault(t.dbid, t)
 
     def _tracks(self, off):
         d = self.data
@@ -82,7 +100,9 @@ class Database:
             ms = struct.unpack_from("<I", d, off + 0x28)[0] if hlen >= 0x2c else 0
             bookmark = struct.unpack_from("<I", d, off + 0x6c)[0] if hlen >= 0x70 else 0
             hidden = hlen >= HIDE_OFFSET + 4 and d[off + HIDE_OFFSET:off + HIDE_OFFSET + 4] == HIDE_MAGIC
-            t = Track(pos, off, tid, ms, bookmark, hidden, hlen)
+            size = struct.unpack_from("<I", d, off + 0x24)[0] if hlen >= 0x28 else 0
+            dbid = struct.unpack_from("<Q", d, off + 0x70)[0] if hlen >= 0x78 else 0
+            t = Track(pos, off, tid, ms, bookmark, hidden, hlen, dbid, size)
             m = off + hlen
             for _ in range(nmhod):
                 mh, mtotal, kind = struct.unpack_from("<III", d, m + 4)
@@ -101,6 +121,8 @@ class Database:
         for _ in range(n):
             hlen, total, nmhod, nmhip = struct.unpack_from("<IIII", d, off + 4)
             master = d[off + 0x14]
+            pid = struct.unpack_from("<Q", d, off + 0x1c)[0] if hlen >= 0x24 else 0
+            self.playlists.append((pid, self._name(off + hlen, off + total)))
             if master:
                 m = off + hlen
                 end = off + total
@@ -109,8 +131,31 @@ class Database:
                     if d[m:m + 4] == b"mhip":
                         self.master.append(struct.unpack_from("<I", d, m + 0x18)[0])
                     m += mtotal
-                return
             off += total
+
+    def _name(self, m, end):
+        d = self.data
+        while m + 16 <= end and d[m:m + 4] == b"mhod":
+            mh, mtotal, kind = struct.unpack_from("<III", d, m + 4)
+            if kind == MHOD_TITLE:
+                length = struct.unpack_from("<I", d, m + mh + 4)[0]
+                return d[m + mh + 16:m + mh + 16 + length].decode("utf-16-le", "replace")
+            m += mtotal
+        return ""
+
+    def key(self, t):
+        return Key(t.dbid, t.id, t.size, t.ms)
+
+    def find(self, key):
+        """The track a key names, by the payload's rule (tracks.c): the same dbid, else the
+        same track id, size and length when one of the two has no dbid; None if it's gone."""
+        t = self.by_dbid.get(key.dbid) if key.dbid else None
+        if t:
+            return t
+        t = self.by_id.get(key.id)
+        if t and t.size == key.size and t.ms == key.ms and not (key.dbid and t.dbid):
+            return t
+        return None
 
     def name(self, t):
         return "\t".join((t.title, t.artist, t.album))
@@ -120,18 +165,59 @@ def itunes(root, name):
     return os.path.join(root, "iPod_Control", "iTunes", name)
 
 
+HIDDEN, SKIPS, BOOKMARKS, PLAYLIST, ART = b"FRGH", b"FRGS", b"FRGB", b"FRGP", b"FRGA"
+# Each format's versions: entry size, and whether entries name songs by key (else by position, id).
+VERSIONS = {HIDDEN: {1: (8, False), 2: (12, False), 3: (24, True)}, SKIPS: {1: (16, False), 2: (28, True)},
+            BOOKMARKS: {1: (24, True)}, PLAYLIST: {1: (20, True)}}
+
+
+class FroggerFile:
+    """A FroggerHidden/FroggerSkips/FroggerBookmarks/FroggerPlaylist_<id> file. entries: one
+    tuple each, the song first: a Key for the keyed versions, else (position, track id); then
+    the entry's other u32s (hidden: flags; skips: count, last; bookmarks: ms)."""
+
+    def __init__(self, data, magic):
+        self.magic = magic
+        if len(data) < 20 or data[:4] != magic:
+            raise ValueError("not a Frogger %s file" % magic.decode())
+        _, self.version, self.entry_size, self.stamp, count, self.reserved = struct.unpack_from("<IHHIII", data, 0)
+        self.id = None
+        head = 20
+        if magic == PLAYLIST:
+            self.id = struct.unpack_from("<Q", data, 16)[0]
+            head = 24
+        size, keyed = VERSIONS[magic].get(self.version, (None, None))
+        if size != self.entry_size:
+            raise ValueError("%s version %d with %d-byte entries: not one this reads" % (magic.decode(), self.version, self.entry_size))
+        self.keyed = keyed
+        self.entries = []
+        for i in range(count):
+            off = head + i * size
+            if off + size > len(data):
+                break
+            if keyed:
+                rest = struct.unpack_from("<%dI" % ((size - Key.SIZE) // 4), data, off + Key.SIZE)
+                self.entries.append((Key.unpack(data, off), *rest))
+            else:
+                w = struct.unpack_from("<%dI" % (size // 4), data, off)
+                self.entries.append(((w[0], w[1]), *w[2:]))
+
+    def track(self, db, song):
+        """The track an entry's song is in db, or None: by key, or for the old versions by
+        position and id (the iPod reads those only with their own iTunesDB)."""
+        if self.keyed:
+            return db.find(song)
+        return track(db, *song)
+
+
 def frogger_file(path, magic):
-    """A FroggerHidden/FroggerSkips file: (version, stamp, entries as tuples of u32), or None."""
+    """A FroggerFile, None if there's no such file, or what's wrong with it (a str)."""
     if not os.path.exists(path):
         return None
-    d = read(path)
-    if len(d) < 20 or d[:4] != magic:
-        return "not a Frogger file"
-    _, version, size, stamp, count, _ = struct.unpack_from("<IHHIII", d, 0)
-    words = size // 4
-    entries = [struct.unpack_from("<%dI" % words, d, 20 + i * size) for i in range(count)
-               if 20 + (i + 1) * size <= len(d)]
-    return version, stamp, entries
+    try:
+        return FroggerFile(read(path), magic)
+    except ValueError as e:
+        return str(e)
 
 
 def fresh(path, db):
@@ -145,11 +231,50 @@ def track(db, pos, tid):
     return t if t and t.id == tid else db.by_id.get(tid)
 
 
+class FroggerArt:
+    """FroggerArt (payload/nowplaying.h): version 2's table of (Key, image), version 1's image
+    per track position. images: the pictures' bytes (72 rows of 20 bytes, 2 bits a pixel)."""
+    SIZE, NONE = 72, 0xffff
+    ROW = (SIZE // 4 + 3) & ~3
+    BYTES = ROW * SIZE
+
+    def __init__(self, data):
+        if len(data) < 24 or data[:4] != ART:
+            raise ValueError("not a FroggerArt file")
+        _, self.version, size, n, images, image_bytes, _ = struct.unpack_from("<IHHIIII", data, 0)
+        if size != self.SIZE or image_bytes != self.BYTES or self.version not in (1, 2):
+            raise ValueError("FroggerArt version %d, %d px: not one this reads" % (self.version, size))
+        if self.version == 1:
+            self.table = list(struct.unpack_from("<%dH" % n, data, 24))
+            off = (24 + 2 * n + 3) & ~3
+        else:
+            self.table = [(Key.unpack(data, 24 + 24 * i), struct.unpack_from("<H", data, 24 + 24 * i + 20)[0])
+                          for i in range(n)]
+            off = 24 + 24 * n
+        if len(data) < off + images * self.BYTES:
+            raise ValueError("FroggerArt: %d bytes, %d images need %d" % (len(data), images, off + images * self.BYTES))
+        self.images = [data[off + i * self.BYTES:off + (i + 1) * self.BYTES] for i in range(images)]
+
+    def covers(self, db):
+        """{track position: image index} for db, as the iPod reads it (version 1 only if it
+        has db's track count; entries whose song is gone are dropped)."""
+        if self.version == 1:
+            if len(self.table) != len(db.tracks):
+                return {}
+            return {pos: i for pos, i in enumerate(self.table) if i != self.NONE and i < len(self.images)}
+        out = {}
+        for key, i in self.table:
+            t = db.find(key)
+            if t and i != self.NONE and i < len(self.images):
+                out.setdefault(t.pos, i)
+        return out
+
+
 def show_summary(root, db):
     print("iTunesDB\t%d tracks, %d in the master playlist, written %s" % (
         len(db.tracks), len(db.master), datetime.datetime.fromtimestamp(os.path.getmtime(db.path)).strftime("%Y-%m-%d %H:%M")))
     print("hide flags\t%d tracks" % sum(t.hidden for t in db.tracks))
-    for name, magic in (("FroggerHidden", b"FRGH"), ("FroggerSkips", b"FRGS")):
+    for name, magic in (("FroggerHidden", HIDDEN), ("FroggerSkips", SKIPS), ("FroggerBookmarks", BOOKMARKS)):
         path = itunes(root, name)
         f = frogger_file(path, magic)
         if f is None:
@@ -157,17 +282,22 @@ def show_summary(root, db):
         elif isinstance(f, str):
             print(f"{name}\t{f}")
         else:
-            print("%s\tversion %d, %d entries%s" % (name, f[0], len(f[2]), "" if fresh(path, db) else
-                                                    " (older than the iTunesDB: the iPod ignores it)"))
+            here = sum(f.track(db, e[0]) is not None for e in f.entries)
+            stale = not f.keyed and not fresh(path, db)
+            print("%s\tversion %d, %d entries, %d of them songs in this database%s" % (
+                name, f.version, len(f.entries), here, " (older than the iTunesDB: the iPod ignores it)" if stale else ""))
     lists = sorted(n for n in os.listdir(itunes(root, "")) if n.startswith(("OTGPlaylistInfo", "FroggerPlaylist_")))
     print("playlist files\t%s" % (", ".join(lists) or "none"))
     art = itunes(root, "FroggerArt")
     if os.path.exists(art):
-        d = read(art)[:24]
-        magic, version, size, positions, images, _ = struct.unpack_from("<4sHHIII", d, 0) if len(d) == 24 else (b"", 0, 0, 0, 0, 0)
-        ok = magic == b"FRGA" and positions == len(db.tracks)
-        print("FroggerArt\t%d covers for %d tracks%s" % (images, positions, "" if ok else
-                                                       " (not for this database: Now Playing shows the frame)"))
+        try:
+            a = FroggerArt(read(art))
+            n = len(a.covers(db))
+            print("FroggerArt\tversion %d, %d covers, %d of %d songs have one%s" % (
+                a.version, len(a.images), n, len(db.tracks), "" if n or not a.table else
+                " (not for this database: Now Playing shows the frame)"))
+        except ValueError as e:
+            print("FroggerArt\t%s" % e)
     else:
         print("FroggerArt\tnone (Now Playing shows the frame; Crate or tools/coverart.py writes it)")
 
@@ -184,38 +314,51 @@ def show_hidden(root, db):
         if t.hidden:
             print("%d\thidden\tiTunesDB flag\t%s" % (t.id, db.name(t)))
     path = itunes(root, "FroggerHidden")
-    f = frogger_file(path, b"FRGH")
-    if not isinstance(f, tuple):
+    f = frogger_file(path, HIDDEN)
+    if not isinstance(f, FroggerFile):
         return
-    note = "on the iPod" if fresh(path, db) else "on the iPod, stale"
-    for e in f[2]:
-        t = track(db, e[0], e[1])
-        shown = f[0] >= 2 and len(e) > 2 and e[2] & 1
-        print("%d\t%s\t%s\t%s" % (e[1], "shown" if shown else "hidden", note, db.name(t) if t else "(not in this database)"))
+    note = "on the iPod" if f.keyed or fresh(path, db) else "on the iPod, stale"
+    for e in f.entries:
+        t = f.track(db, e[0])
+        shown = len(e) > 1 and e[1] & 1
+        print("%s\t%s\t%s\t%s" % (t.id if t else e[0][1], "shown" if shown else "hidden", note,
+                                    db.name(t) if t else "(not in this database)"))
 
 
 def show_skips(root, db):
     path = itunes(root, "FroggerSkips")
-    f = frogger_file(path, b"FRGS")
+    f = frogger_file(path, SKIPS)
     print("id\tskips\tlast skipped\ttitle\tartist\talbum")
-    if not isinstance(f, tuple):
+    if not isinstance(f, FroggerFile):
         return
-    for pos, tid, count, last in f[2]:
-        t = track(db, pos, tid)
+    for song, count, last in f.entries:
+        t = f.track(db, song)
         when = (MAC_EPOCH + datetime.timedelta(seconds=last)).strftime("%Y-%m-%d %H:%M") if last else ""
-        print("%d\t%d\t%s\t%s" % (tid, count, when, db.name(t) if t else "(not in this database)"))
-    if not fresh(path, db):
+        print("%d\t%d\t%s\t%s" % (t.id if t else song[1], count, when, db.name(t) if t else "(not in this database)"))
+    if not f.keyed and not fresh(path, db):
         print("# older than the iTunesDB: these counts are from before the last sync", file=sys.stderr)
 
 
 def show_playlists(root, db):
-    """Apple's On-The-Go files and Frogger's FroggerPlaylist_I: an mhpo header and a u32 per
-    song, the index of the song in the master playlist's order."""
+    """Apple's On-The-Go files and Frogger's old FroggerPlaylist_I: an mhpo header and a u32 per
+    song, the index of the song in the master playlist's order. Frogger's FroggerPlaylist_<id>:
+    the songs by key."""
     print("file\tid\ttitle\tartist\talbum")
+    names = dict(db.playlists)              # persistent id: name
     for name in sorted(os.listdir(itunes(root, ""))):
         if not name.startswith(("OTGPlaylistInfo", "FroggerPlaylist_")):
             continue
         d = read(itunes(root, name))
+        if d[:4] == PLAYLIST:
+            try:
+                f = FroggerFile(d, PLAYLIST)
+            except ValueError:
+                continue
+            label = "%s (%s)" % (name, names.get(f.id, "no such playlist now"))
+            for (song,) in f.entries:
+                t = db.find(song)
+                print("%s\t%s\t%s" % (label, t.id if t else "", db.name(t) if t else "(not in this database)"))
+            continue
         if d[:4] != b"mhpo":
             continue
         hlen, size, count = struct.unpack_from("<III", d, 4)
@@ -227,7 +370,8 @@ def show_playlists(root, db):
 
 
 def show_bookmarks(root, db):
-    """Play Counts (mhdp): 16 bytes per track in the track list's order, +8 the bookmark (ms)."""
+    """Play Counts (mhdp): 16 bytes per track in the track list's order, +8 the bookmark (ms);
+    FroggerBookmarks for the songs without one."""
     path = itunes(root, "Play Counts")
     print("id\tleft at\tlength\ttitle\tartist\talbum")
     marks = {}
@@ -238,6 +382,12 @@ def show_bookmarks(root, db):
             if count == len(db.tracks):
                 for i in range(count):
                     marks[i] = struct.unpack_from("<I", d, hlen + i * size + 8)[0]
+    f = frogger_file(itunes(root, "FroggerBookmarks"), BOOKMARKS)
+    if isinstance(f, FroggerFile):          # the iPod uses these after another app's sync
+        for song, ms in f.entries:
+            t = db.find(song)
+            if t and not marks.get(t.pos, t.bookmark):
+                marks[t.pos] = ms
     for t in db.tracks:
         ms = marks.get(t.pos, t.bookmark)
         if t.ms >= RESUME_MIN_MS and ms:

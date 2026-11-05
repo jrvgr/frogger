@@ -34,6 +34,7 @@ FEATURES = {
     "diskhang": ("The disk coming back after it stops answering (SRST, re-init, retry)", ["disk.c"]),
     "lockcover": ("Lock Cover: Hold on, Hold off, the switch off", ["lock.c"]),
     "flash": ("Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto", ["flash.c"]),
+    "dbid": ("Frogger's files after another app's sync: hides, skips, covers, bookmarks, playlists", ["tracks.c", "hide.c", "skips.c", "art.c", "resume.c", "playlist.c"]),
 }
 CHECKS = list(FEATURES)
 # Features no check covers yet: the script that shows them, in screenshots only.
