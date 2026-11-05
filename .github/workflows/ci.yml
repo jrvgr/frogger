@@ -71,14 +71,25 @@ jobs:
           curl -fsSL -o firmware/iPod_2.2.3.ipsw \
             https://secure-appldnld.apple.com/iPod/SBML/osx/bundles/061-2687.20060912.IPwdC/iPod_2.2.3.ipsw
           echo "bec081f2bacd4099dcfc533048a6844c8fafb50197c60d9d7ef95075cf2c6e92  firmware/iPod_2.2.3.ipsw" | sha256sum -c
-      - uses: actions/cache@v4
+      # The built emupod library, keyed on what goes into it: the pinned submodule, our patch
+      # and the toolchain. Saved right after the build, so a failing test doesn't lose it.
+      - name: emupod cache key
+        id: emupod-key
+        run: echo "key=emupod-so-${{ runner.os }}-$(git rev-parse HEAD:third_party/emupod)-${{ hashFiles('tools/emupod/emupod-gen3.patch', 'flake.lock') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: emupod-cache
         with:
-          path: |
-            ~/.cargo/registry
-            third_party/emupod/rust/target
-          key: emupod-${{ runner.os }}-${{ hashFiles('tools/emupod/emupod-gen3.patch', '.gitmodules') }}
-      - name: emupod (patched, built)
+          path: third_party/emupod/emupod/emupod_rs.abi3.so
+          key: ${{ steps.emupod-key.outputs.key }}
+      - name: emupod (patched; built unless cached)
         run: nix develop .#emu -c tools/emupod/setup.sh
+        env:
+          EMUPOD_PREBUILT: ${{ steps.emupod-cache.outputs.cache-hit }}
+      - uses: actions/cache/save@v4
+        if: steps.emupod-cache.outputs.cache-hit != 'true'
+        with:
+          path: third_party/emupod/emupod/emupod_rs.abi3.so
+          key: ${{ steps.emupod-key.outputs.key }}
       - name: Build
         run: |
           nix develop .#emu -c python3 tools/fwtool.py extract firmware/iPod_2.2.3.ipsw -o build/fw
