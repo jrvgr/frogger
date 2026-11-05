@@ -274,6 +274,10 @@ lcd_hook:
     ldrb    r12, [r12]
     cmp     r12, #0
     bne     1f
+    ldr     r12, =lock_armed        @ lock.c: Lock Cover could be up
+    ldrb    r12, [r12]
+    cmp     r12, #0
+    bne     2f
     .global lcd_flush
 lcd_flush:
     push    {r4, r5, r6, r7, r8, r9, sl, lr}
@@ -282,6 +286,12 @@ lcd_flush:
     mov     r2, #1
     strb    r2, [r12]
     bx      lr
+2:  push    {r0, r1, r2, r3, r12, lr}
+    bl      lock_lcd                @ 1: Hold is on, skip it (or the lock screen just went)
+    cmp     r0, #0
+    pop     {r0, r1, r2, r3, r12, lr}
+    bxne    lr
+    b       lcd_flush
 
 /* 0x68e60 in 0x68dfc, an end-update, where its drain of dirty rectangles
  * (each drawn, then copied to the LCD) ends, or where it goes when it isn't
@@ -440,6 +450,7 @@ tick_hook:
     bl      skips_tick              @ skips.c: FroggerSkips, the same
     bl      playlist_tick           @ playlist.c: a playlist save that waited for the disk
     bl      np_tick                 @ nowplaying.c: a held LCD let go
+    bl      lock_tick               @ lock.c: Hold on or off, the lock screen
 #ifdef FROGGER_DEBUG
     bl      debug_tick              @ debug.c: the last boot's record, once
 #endif

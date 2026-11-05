@@ -65,7 +65,7 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 | `0xb4578` | `0xe5903020` `ldr r3, [r0, #32]` | `vis_hook` | B | `0xb457c` | First instruction of every element's SetVisible (`vtable+0x94`): Now Playing opens or closes; skip showing what the cover page hides | `nowplaying.c` | confirmed (device) | [How the pages work][nppages] |
 | `0x9bab0` | `0xe5940020` `ldr r0, [r4, #32]` | `vm_hook` | B | `0x9bab4` | Bytecode interpreter, before each opcode fetch (`r4` the VM): the pcs in [UI bytecode](#ui-bytecode) go to `frogger_vm`, which may return another pc | `holdmenu.c`, `queue.c`, `nowplaying.c`, `debug.c` | confirmed (device) | [The VM][vm], [How the pages work][nppages] |
 | `0xe3aac` | `0xe59d6054` `ldr r6, [sp, #84]` | `trans_hook` | B | `0xe3ab0` | `0xe3a9c(stack, from, to, kind, ms)`, a screen stack's slide: 1 ms for the bar area on the cover page | `nowplaying.c` | confirmed (device) | [How the pages work][nppages] |
-| `0xd2db4` | `0xe92d47f0` `push {r4-r10, lr}` | `lcd_hook` | B | `0xd2db8` | First instruction of `lcd_update_rect(display, rect)` (top, left, bottom, right), the only code that writes the LCD, from the framebuffer `0x3835a0`: held (skipped, noted) while a page switch's new page draws; `lcd_flush` goes past it for the slide's frames | `nowplaying.c` | confirmed (emupod) | [How the pages work][nppages] |
+| `0xd2db4` | `0xe92d47f0` `push {r4-r10, lr}` | `lcd_hook` | B | `0xd2db8` | First instruction of `lcd_update_rect(display, rect)` (top, left, bottom, right), the only code that writes the LCD, from the framebuffer `0x3835a0`: held (skipped, noted) while a page switch's new page draws, and skipped while Lock Cover is up (`lock_lcd`); `lcd_flush` goes past it for the slide's frames and the lock screen | `nowplaying.c`, `lock.c` | confirmed (emupod) | [How the pages work][nppages] |
 | `0x68e60` | `0xe5940020` `ldr r0, [r4, #32]` | `drawn_hook` | B | `0x68e64` | In the end-update `0x68dfc`, after its drain of dirty rectangles (each drawn, then copied to the LCD; it also comes here when it isn't the last end-update): the new page is in the framebuffer, so the slide runs | `nowplaying.c` | confirmed (emupod) | [How the pages work][nppages] |
 | `0xc0c68` | `0xe5940000` `ldr r0, [r4]` | `queue_add_hook` | BL | | `0xc0b30(lib, row)`, the add to On-The-Go, on its way out (`r9` = count before) | `queue.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | `0xb7b00` | `0xe92d4ff0` `push {r4-r11, lr}` | `queue_next_hook` | B | `0xb7b04` | First instruction of `0xb7b00(player, list, key, flags)`, the item after `key`: answer with the queue (past songs removed in Up Next; `QUEUE_NO_NEXT` makes it return 0). `queue_next_orig` runs Apple's | `queue.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
@@ -73,7 +73,7 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 | `0x9106c` | `0xe3540000` `cmp r4, #0` | `letter_hook` | BL | | Wheel handler `0x90fe4`, where it looks at the step (`r4`; `r5` the list widget) | `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
 | `0x7998c` | `0xe92d43f0` `push {r4-r9, lr}` | `label_hook` | B | `0x79990` | First instruction of the UI getter `0x7998c(ui, fourcc, prop, row, out*)`: note the `'Str '` property rows ask for | `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
 | `0x1fabc` | `0xe92d4008` `push {r3, lr}` | `title_hook` | B | `0x1fac0` | First instruction of `0x1fabc(obj, element, string, flags)` (`0x08de.60`): note the title's string (element `0x25e7`) | `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
-| `0xe9664` | `0xe92d4030` `push {r4, r5, lr}` | `tick_hook` | B | `0xe9668` | Called by the UI dispatcher `0x88ee4` about every 0.25 s on the UI thread | `letters.c`, `debug.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
+| `0xe9664` | `0xe92d4030` `push {r4, r5, lr}` | `tick_hook` | B | `0xe9668` | Called by the UI dispatcher `0x88ee4` about every 0.25 s on the UI thread | `letters.c`, `debug.c`, `lock.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
 | `0x41e5c` | `0xe3a024c4` `mov r2, #0xc4000000` | `crash_hook` | B | `0x41e60` | Apple's abort handler `0x41e5c(frame, kind)`, from the vectors `0x140`, `0x158`, `0x170`. DEBUG=1 only (`OPTIONAL_HOOKS`) | `debug.c` | confirmed (device) | [Address spaces][as], `payload/debug.c` |
 | `0xb9354` | `0xe59d0230` `ldr r0, [sp, #560]` | `resume_flags_hook` | BL | | `0xb8ed8`, the track load: the flags from `0xb7efc`, about to be `[player+0x2380]` (`r6` the track record): `0x40` (bookmark) for long tracks | `resume.c` | confirmed (emupod) | [Bookmarks][bm] |
 | `0xb9550` | `0xe5840164` `str r0, [r4, #356]` | `resume_start_hook` | BL | | `0xb8ed8`: a bookmarked track's start (`r0`, from `track+0x60`) into `[player+0x2164]`: 5 s back | `resume.c` | confirmed (emupod) | [Bookmarks][bm] |
@@ -117,6 +117,10 @@ Called from C through a cast `#define` (or from `hooks.S`). Signatures are as Fr
 | `0xc5a90` | `read_otg_file(dest, tracks, stamp, path)` | Appends an On-The-Go file's songs to `dest` if it carries `stamp`; 0 = done | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | `0x6fcfc` | `lib_tracks([lib])` | The library's track list, for `0xc5a90` | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | `0x77600` | `db_stamp()` | The iTunesDB's file time, the files' stamp | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
+| **Lock Cover** | | | | | |
+| `0x7a9b8` | `hold_on()` | 1 while Hold is on (GPIOA bit 5 high; `0x91e54` compares the pin object `[0x420c30]` with its level `+0x10`), as `0xbe110` asks before dropping a key | `lock.c` | confirmed (emupod) | [Key input][keys] |
+| `0xa5004`, `0x81ee8`, `0xef738` | `pool_lock(pool)`, `pool_get(pool, key, &text, &bytes)` (0 = found), `pool_unlock(pool)` | A track's string from its pool, as `0xbfb44` does for `0xeb1e8`: the title is key `track+0x24` in pool `[track]+0xb0`, UTF-16 halfwords, the length in bytes | `lock.c` | confirmed (emupod) | [Lock Cover][lock] |
+| `0x13c2a0`, `0x8d470` | The Hold thread's loop (pin object, vtable `0x29378`) and its change handler: signals event `[obj+0x18]` (`0x37cc`) and calls `0xad0f8`; the UI then draws the lock in the title bar. Not called by Frogger | | likely | [Lock Cover][lock] |
 | **Playlists and playback** | | | | | |
 | `0xac2ec` | `new_temp_list(lib, &list)` | New temporary playlist (flag `0x40`, never listed); 0 = made | `queue.c`, `playlist.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | `0xa97bc` | `list_stop(list)` | Stops the list if it's playing (first step of `0x465b0`) | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
@@ -225,7 +229,7 @@ Not called, but where the hooks sit or what they stand in for.
 | `0x420a34` | Copy of the prefs flags word | `settings.c` | confirmed (emupod) | [Native side of a setting][native] |
 | `Device/Preferences` file offset `0xafc` | The saved prefs flags word: the file is the prefs struct from `prefs+8` (offset = struct offset − 8) | Crate | confirmed (device) | [Frogger's settings on the disk][fdisk] |
 | ui `+0x1c` | The library object (`lib`) | `queue.c`, `playlist.c`, `letters.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
-| `[lib]` | Root object = prefs: `+4` the player, `+0x20` shuffle byte, `+0xb04` prefs flags word (Apple: bits 0, 1; Frogger: 16 Show Hidden, 17 Jump by Letter off, 18 Resume Mixes off, 19–23 a feature switch off (`FEATURE_*`), 24–26 the backlight timer's last value other than Off and Always On), `+0xbc4` the app object (`0x08ea`), `+0xb41` Play Counts needs writing, `+0xb42` On-The-Go needs saving | `queue.c`, `playlist.c`, `settings.c`, `letters.c`, `resume.c` | confirmed (emupod) | [Frogger's settings][fset], [Playlists made on the iPod][otgfiles] |
+| `[lib]` | Root object = prefs: `+4` the player, `+0x20` shuffle byte, `+0xb04` prefs flags word (Apple: bits 0, 1; Frogger: 16 Show Hidden, 17 Jump by Letter off, 18 Resume Mixes off, 19–23 and 27 a feature switch off (`FEATURE_*`), 24–26 the backlight timer's last value other than Off and Always On), `+0xbc4` the app object (`0x08ea`), `+0xb41` Play Counts needs writing, `+0xb42` On-The-Go needs saving | `queue.c`, `playlist.c`, `settings.c`, `letters.c`, `resume.c` | confirmed (emupod) | [Frogger's settings][fset], [Playlists made on the iPod][otgfiles] |
 | `lib+0x3c` | Callback run when a list starts playing | `queue.c` | likely | `payload/queue.c` |
 | `lib+0x44` | The list Now Playing plays from | `queue.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | `lib+0x48` | On-The-Go. Stock's add, clear and save all read it, so Frogger swaps its own list in while they run | `queue.c`, `playlist.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
@@ -245,7 +249,7 @@ Not called, but where the hooks sit or what they stand in for.
 | `0x1fd44dc` (heap, stock; differs with Frogger) `ata+0x10c`, `+0x114`/`+0x118`, `+0x1a4`, `+0x1e0` | The ATA object: pointers to the status, device-control and alt-status registers; the running command's timeout; re-init pending (set by `0x913d0`, cleared at `0xc3560`) | `disk.c`, `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
 | `0x420a5c` (19 bytes), `0x420a70` (19 words), `0x420a54` | The disk arbiter's state: a client holds the disk, its ticks left (−1 busy), and `+4` "some client holds it" | | confirmed (code) | [Flash Storage][flash] |
 | `ata+0x17c`, `ata+0x190` | the transfer pointer: `0xdec68` stores the IDENTIFY buffer there, and at `0x9dbac` it points just past its 512 bytes (the buffer is reused later); the command's error | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
-| prefs flags (`prefs+0xb04`) bits 27-28 | Flash Storage: 0 Off, 1 Auto, 2 On | `settings.c` | confirmed (emupod) | [Flash Storage][flash] |
+| prefs flags (`prefs+0xb04`) bits 28-29 | Flash Storage: 0 Off, 1 Auto, 2 On | `settings.c` | confirmed (emupod) | [Flash Storage][flash] |
 | `0xc00033f8` | ATA device control (write: bit 1 nIEN, bit 2 SRST) / alternate status (read) | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 | `0x1ed44dc` (heap, with Frogger in emupod) | The ATA object as `disk_read_hook` sees it (r0 of `0xc788c`); `disk.c` keeps the pointer from the first read rather than a fixed address | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 
@@ -339,8 +343,10 @@ they're free):
 | --- | --- | --- | --- |
 | `0x2900`, `0x2901`, `0x2902` | Settings item id (word 6) | Show Hidden, Jump by Letter, Resume Mixes | `settings.h` |
 | `0x3f00`, `0x3f16`, `0x3f1e` | `Str ` | "Show Hidden", "Jump by Letter", "Resume Mixes" | `settings.h` |
-| `0x2903`–`0x2907` | Settings item id (word 6) | The feature switches: Cover Page, Hold Menu, Quick Settings, Battery Percent, Page Slide | `settings.h` |
-| `0x3f20`–`0x3f24` | `Str ` | Their labels | `settings.h` |
+| `0x2903`–`0x2908` | Settings item id (word 6) | The feature switches: Cover Page, Hold Menu, Quick Settings, Battery Percent, Page Slide, Lock Cover | `settings.h` |
+| `0x3f20`–`0x3f25` | `Str ` | Their labels | `settings.h` |
+| `0x2909` | Settings item id (word 6) | Flash Storage | `settings.h` |
+| `0x3f26`, `0x3f27` | `Str ` | "Flash Storage", its value "Auto" | `settings.h` |
 | `0x3f2c` | `Str ` | Quick settings' "Sleep" | `holdmenu.h` |
 | `0x3f01` | `BMap` | The cover (`FROGGER_BMAP_ART`) | `settings.h` |
 | `0x3f10`, `0x3f11`, `0x3f12`, `0x3f13` | `Str ` | Hold menu: "Frogger", "Add to Queue", "Add to Playlist", "Add to" | `holdmenu.h` |
@@ -379,6 +385,7 @@ The other hex constants in `payload/`, `loader/` and `tools/mkpayload.py`: instr
 `0x2800abcd` example in `loader/patches.c`; and the digit bitmaps in `art.c` (`0x2c97`, `0x73e7`, …) and `battery.c`.
 
 [as]: re-notes.md#address-spaces
+[lock]: re-notes.md#lock-cover-confirmed-in-emupod
 [bm]: re-notes.md#bookmarks-resume-confirmed-in-emupod
 [bat]: re-notes.md#the-battery-icon-confirmed-in-emupod
 [skips]: re-notes.md#skips-confirmed-in-emupod

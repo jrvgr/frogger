@@ -2,7 +2,7 @@
 emupod's EMUPOD_ATA_ID, so each run is a process of its own:
 
 1. A flash IDENTIFY (word 217 = 1, as an SSD or a bridge that reports it): Select on the row steps
-   Off, Auto, On, Off (prefs bits 27-28) and the value shown changes each time; with Auto, Tone A's
+   Off, Auto, On, Off (prefs bits 28-29) and the value shown changes each time; with Auto, Tone A's
    music-cache refill ends and the drive gets its STANDBY about 1 s later (Apple: 2 s or more).
 2. The same IDENTIFY with the switch Off: Apple's hold, 2 s or more.
 3. A hard drive's IDENTIFY (word 217 = 4200 rpm, a Toshiba model) with Auto: left alone (Apple's hold),
@@ -17,8 +17,8 @@ from ipod3g import Pod, W, ROOT
 
 SYM = {l.split()[2]: int(l.split()[0], 16) for l in open(ROOT / "build/payload/payload.sym") if len(l.split()) == 3}
 ISSUE = 0x1416f0                # writes a command to the drive (r0 the ATA object, the byte at +0x1e)
-ROW = 17                        # Flash Storage in Settings, after Clicker (8) and the other Frogger rows
-SHIFT = 27
+ROW = 18                        # Flash Storage in Settings, after Clicker (8) and the other Frogger rows
+SHIFT = 28
 IDS = {
     "flash": "w217=1,model=SanDisk SDSSDP064G",
     "hdd": "w217=4200,model=TOSHIBA MK4004GAH",

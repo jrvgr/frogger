@@ -360,7 +360,7 @@ and 9 0. So the standby comes 2 s after a music-cache refill during playback (cl
   alone. A bridge may report none of these (it answers for the card, and old CF cards and bridges
   leave word 217 at 0), so Auto can miss a flash mod: use On. That's why the default is Off, not
   Auto. **Not known without devices:** what iFlash and other bridges put in these words.
-- The switch is read through the prefs (bits 27-28, `frogger_flash_mode()`); until they're up it
+- The switch is read through the prefs (bits 28-29, `frogger_flash_mode()`); until they're up it
   counts as Off. In emupod they're up at 2.64 s, before boot's first hold (client 1, at 2.79 s), so
   a saved On or Auto covers boot too.
 

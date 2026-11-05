@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include "settings.h"
 #include "nowplaying.h"
+#include "lock.h"
 
 #define TYPE_BMAP 0x424d6170u
 #define TYPE_STR  0x53747220u
@@ -290,7 +291,8 @@ static void lcd_all(void)
 {
     static const int32_t all[4] = { 0, 0, FB_ROWS, 160 };    /* top, left, bottom, right */
 
-    lcd_flush(0, all);
+    if (!lock_shown())          /* the lock screen stays until Hold goes off */
+        lcd_flush(0, all);
 }
 
 static void slide_begin(int from_left)

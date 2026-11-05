@@ -359,6 +359,7 @@ int np_art_update(void)
         if (!art.height) {      /* art_shown's first ART_FRAME */
             art_header();
             art_none(0);
+            np_art_gen++;
         }
         job.record = art_record;
         job.want++;
@@ -389,7 +390,16 @@ int np_art_update(void)
     if (got == art_shown)
         return 0;               /* the album's cover, or the same frame, is up already */
     art_shown = got;
+    np_art_gen++;
     return 1;
+}
+
+/* Lock Cover's (lock.c): the cover now, and a count of its changes. */
+uint32_t np_art_gen;
+
+const uint8_t *np_art_pixels(void)
+{
+    return art.height ? art.px : 0;
 }
 
 /* Now Playing opens: if the last cover couldn't be read, try it again. */

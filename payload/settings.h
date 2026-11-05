@@ -21,14 +21,15 @@
 #define FEATURE_QUICK   2           /* quick settings, holding Menu (holdmenu.c) */
 #define FEATURE_BATTERY 3           /* the battery percentage (battery.c) */
 #define FEATURE_SLIDE   4           /* the cover page's slide (nowplaying.c) */
-#define FEATURES        5
+#define FEATURE_LOCK    5           /* Lock Cover, the cover while Hold is on (lock.c) */
+#define FEATURES        6
 #define FROGGER_ITEM_FEATURE 0x2903
 #define FROGGER_STR_FEATURE  0x3f20
 /* "Flash Storage" (flash.c), after the switches: Off, Auto or On, in prefs
- * bits 27-28 (0 Off, the default). frogger_flash_mode() asks. */
-#define FROGGER_ITEM_FLASH   0x2908     /* FROGGER_ITEM_FEATURE + FEATURES */
-#define FROGGER_STR_FLASH    0x3f25     /* FROGGER_STR_FEATURE + FEATURES */
-#define FROGGER_STR_AUTO     0x3f26     /* its value "Auto" */
+ * bits 28-29 (0 Off, the default). frogger_flash_mode() asks. */
+#define FROGGER_ITEM_FLASH   0x2909     /* FROGGER_ITEM_FEATURE + FEATURES */
+#define FROGGER_STR_FLASH    0x3f26     /* FROGGER_STR_FEATURE + FEATURES */
+#define FROGGER_STR_AUTO     0x3f27     /* its value "Auto" */
 #define FLASH_OFF  0
 #define FLASH_AUTO 1
 #define FLASH_ON   2
@@ -46,11 +47,15 @@
 #define FROGGER_PREF_NO_LETTERS  (1u << 17)     /* set: Jump by Letter is Off (On by default) */
 #define FROGGER_PREF_NO_RESUME   (1u << 18)     /* set: Resume Mixes is Off (On by default) */
 #define FROGGER_PREF_NO_FEATURE  19             /* + FEATURE_...: set, that switch is Off */
+/* Bits 19-23 are the first five switches; bits 24-26 the timer below, so the
+ * sixth goes on at bit 27 (bits 28-29 are Flash Storage's, so a seventh needs
+ * another spot). */
+#define FROGGER_PREF_FEATURE(f)  (1u << ((f) < 5 ? FROGGER_PREF_NO_FEATURE + (f) : 27 + (f) - 5))
 /* Bits 24-26: the backlight timer's last value other than Off and Always On
  * (quick settings' Backlight row cycles Off, it, Always On); 0 = none yet. */
 #define FROGGER_PREF_TIMER_SHIFT 24
 #define FROGGER_PREF_TIMER       (7u << FROGGER_PREF_TIMER_SHIFT)
-#define FROGGER_PREF_FLASH_SHIFT 27
+#define FROGGER_PREF_FLASH_SHIFT 28
 #define FROGGER_PREF_FLASH       (3u << FROGGER_PREF_FLASH_SHIFT)
 #define FROGGER_ITEMS (4 + FEATURES)            /* our rows, after Clicker */
 
