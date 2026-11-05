@@ -16,7 +16,8 @@ LOGS = ROOT / "build/emupod-work/logs"
 # Each check: what it covers and the payload files it goes through. CI's summary shows them, and
 # the payload files no check goes through (tools/emupod/README.md has the same table).
 FEATURES = {
-    "holdmenu2": ("Hold menu: Go to Album/Artist, Play Album Next, Hide", ["holdmenu.c", "browse.c", "hide.c"]),    "upnext": ("Up Next: open, remove, play from, clear", ["queue.c", "holdmenu.c", "browse.c"]),
+    "holdmenu2": ("Hold menu: Go to Album/Artist, Play Album Next, Hide", ["holdmenu.c", "browse.c", "hide.c"]),
+    "upnext": ("Up Next: open, remove, play from, clear", ["queue.c", "holdmenu.c", "browse.c"]),
     "unhide": ("Show (un-hide), Settings › Show Hidden, FroggerHidden", ["hide.c", "settings.c"]),
     "quicksettings": ("Quick settings (hold Menu), its Sleep", ["holdmenu.c"]),
     "queuerow": ("The main menu's Queue row", ["queue.c"]),
@@ -32,6 +33,7 @@ FEATURES = {
     "switches": ("Settings' feature switches, each off", ["settings.c"]),
     "diskhang": ("The disk coming back after it stops answering (SRST, re-init, retry)", ["disk.c"]),
     "lockcover": ("Lock Cover: Hold on, Hold off, the switch off", ["lock.c"]),
+    "flash": ("Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto", ["flash.c"]),
 }
 CHECKS = list(FEATURES)
 # Features no check covers yet: the script that shows them, in screenshots only.

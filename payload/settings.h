@@ -25,6 +25,14 @@
 #define FEATURES        6
 #define FROGGER_ITEM_FEATURE 0x2903
 #define FROGGER_STR_FEATURE  0x3f20
+/* "Flash Storage" (flash.c), after the switches: Off, Auto or On, in prefs
+ * bits 28-29 (0 Off, the default). frogger_flash_mode() asks. */
+#define FROGGER_ITEM_FLASH   0x2909     /* FROGGER_ITEM_FEATURE + FEATURES */
+#define FROGGER_STR_FLASH    0x3f26     /* FROGGER_STR_FEATURE + FEATURES */
+#define FROGGER_STR_AUTO     0x3f27     /* its value "Auto" */
+#define FLASH_OFF  0
+#define FLASH_AUTO 1
+#define FLASH_ON   2
 
 /* The cover-art bitmap (art.c). No View shows this id yet; build with
  * -DFROGGER_BMAP_ART=0x25ed to see the test picture in place of a small
@@ -40,13 +48,16 @@
 #define FROGGER_PREF_NO_RESUME   (1u << 18)     /* set: Resume Mixes is Off (On by default) */
 #define FROGGER_PREF_NO_FEATURE  19             /* + FEATURE_...: set, that switch is Off */
 /* Bits 19-23 are the first five switches; bits 24-26 the timer below, so the
- * sixth and later go on at bit 27. */
+ * sixth goes on at bit 27 (bits 28-29 are Flash Storage's, so a seventh needs
+ * another spot). */
 #define FROGGER_PREF_FEATURE(f)  (1u << ((f) < 5 ? FROGGER_PREF_NO_FEATURE + (f) : 27 + (f) - 5))
 /* Bits 24-26: the backlight timer's last value other than Off and Always On
  * (quick settings' Backlight row cycles Off, it, Always On); 0 = none yet. */
 #define FROGGER_PREF_TIMER_SHIFT 24
 #define FROGGER_PREF_TIMER       (7u << FROGGER_PREF_TIMER_SHIFT)
-#define FROGGER_ITEMS (3 + FEATURES)            /* our rows, after Clicker */
+#define FROGGER_PREF_FLASH_SHIFT 28
+#define FROGGER_PREF_FLASH       (3u << FROGGER_PREF_FLASH_SHIFT)
+#define FROGGER_ITEMS (4 + FEATURES)            /* our rows, after Clicker */
 
 /* Apple's values are the string ids of what the row shows. */
 #define SETTING_ON     0x279d   /* "On" */
@@ -77,7 +88,10 @@ extern const uint32_t frogger_label_resume_size;
 void settings_sync(uint32_t lib);
 /* Whether a FEATURE_ switch is On (also before the prefs are up). */
 int frogger_on(unsigned feature);
+/* FLASH_OFF, FLASH_AUTO or FLASH_ON (Off until the prefs are up). */
+unsigned frogger_flash_mode(void);
 extern const char *const frogger_feature_labels[FEATURES];
+extern const char frogger_label_flash[], frogger_label_auto[];
 #endif
 
 #endif

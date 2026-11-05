@@ -658,3 +658,31 @@ disk_read_orig:
     ldr     pc, =0xc7890
 
     .ltorg
+
+/* Flash Storage (flash.c). */
+
+/* 0x9dbac in the ATA dispatcher 0x9da1c, op 0xEC, after the IDENTIFY has
+ * finished (was: ldr r0, [r4, #400], its error; r4 the ATA object, the data
+ * at [r4+0x17c]). flash_id keeps what Auto needs. */
+    .global flash_id_hook
+flash_id_hook:
+    push    {r0, r1, r2, r3, r12, lr}
+    mov     r0, r4
+    bl      flash_id
+    pop     {r0, r1, r2, r3, r12, lr}
+    ldr     r0, [r4, #400]
+    bx      lr
+
+/* 0x57820, the first instruction of 0x57820(client, ms), a disk arbiter
+ * client's "done, keep the disk up for ms more" (was: push {r4, lr}).
+ * flash_hold may cut ms. Entered with B; back at 0x57824. */
+    .global flash_hold_hook
+flash_hold_hook:
+    push    {r0, r2, r3, r12, lr}
+    bl      flash_hold
+    mov     r1, r0
+    pop     {r0, r2, r3, r12, lr}
+    push    {r4, lr}
+    ldr     pc, =0x57824
+
+    .ltorg
