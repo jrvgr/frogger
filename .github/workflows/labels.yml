@@ -65,11 +65,21 @@ jobs:
     name: PR has a type and an area label
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
+    # `gh pr create --label` opens the PR first and labels it a moment later, so each labeling
+    # starts a new check: the newest one wins and the older ones stop instead of failing.
+    concurrency:
+      group: pr-labels-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - uses: actions/github-script@v7
         with:
           script: |
-            const names = context.payload.pull_request.labels.map(l => l.name);
+            // Just opened: give the labels that come with it a moment, then read them fresh.
+            if (context.payload.action === 'opened')
+              await new Promise(r => setTimeout(r, 20000));
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              ...context.repo, issue_number: context.payload.pull_request.number });
+            const names = labels.map(l => l.name);
             const types = names.filter(n => n.startsWith('type: '));
             const areas = names.filter(n => n.startsWith('area: '));
             if (types.length !== 1 || areas.length < 1)
