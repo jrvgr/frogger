@@ -33,7 +33,7 @@ def decode(writes):
     stream = [(a, v & 0xFF) for a, _, v in writes if a in (LCD_CMD, LCD_DATA)]
     i, reg, addr = 0, None, 0
     while i + 1 < len(stream):
-        (a1, hi), (a2, lo) = stream[i], stream[i + 1]
+        (a1, hi), (_a2, lo) = stream[i], stream[i + 1]
         i += 2
         if a1 == LCD_CMD:
             reg = lo

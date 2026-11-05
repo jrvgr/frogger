@@ -51,12 +51,14 @@ HOOKS = [
     (0x8e788, 0xebfed0d9, "battery_state"),      # bl    0x42af4
     (0xd2db4, 0xe92d47f0, "lcd_hook"),           # push  {r4-r10, lr}
     (0x68e60, 0xe5940020, "drawn_hook"),         # ldr   r0, [r4, #32]
+    (0xc347c, 0xe92d407c, "disk_reinit_hook"),   # push  {r2-r6, lr}
+    (0xc788c, 0xe92d47fc, "disk_read_hook"),     # push  {r2-r10, lr}
 ]
 
 # Hooks entered with a plain B instead of BL: they sit where lr is still live (the first
 # instruction of a function), so they must not overwrite it, and they jump back to the
 # next instruction themselves.
-BRANCH_HOOKS = {"vis_hook", "vm_hook", "trans_hook", "queue_next_hook", "keep_hook", "label_hook", "title_hook", "tick_hook", "crash_hook", "counts_hook", "skip_next_hook", "skip_pick_hook", "lcd_hook", "drawn_hook"}
+BRANCH_HOOKS = {"vis_hook", "vm_hook", "trans_hook", "queue_next_hook", "keep_hook", "label_hook", "title_hook", "tick_hook", "crash_hook", "counts_hook", "skip_next_hook", "skip_pick_hook", "lcd_hook", "drawn_hook", "disk_reinit_hook", "disk_read_hook"}
 
 # Hooks only some builds have (the debug record, `make -C loader DEBUG=1`): left out
 # when the payload doesn't define them.

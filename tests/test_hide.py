@@ -6,6 +6,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE = ROOT / "build/fw/osos.img"
 BUILD = ROOT / "build"
@@ -27,14 +29,15 @@ class MkPayloadTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             mkpayload.bl(0, 0x4000000)
 
-    @unittest.skipUnless(IMAGE.exists(), "needs build/fw/osos.img")
+    @pytest.mark.firmware
     def test_hook_sites_match_firmware(self):
         d = IMAGE.read_bytes()
         for addr, orig, name in mkpayload.HOOKS:
             self.assertEqual(struct.unpack_from("<I", d, addr)[0], orig, name)
 
 
-@unittest.skipUnless(unicorn and IMAGE.exists(), "needs unicorn (nix develop) and build/fw/osos.img")
+@pytest.mark.firmware
+@pytest.mark.skipif(unicorn is None, reason="needs unicorn (nix develop)")
 class HideTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -73,4 +76,4 @@ class HideTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    sys.exit(pytest.main([__file__]))

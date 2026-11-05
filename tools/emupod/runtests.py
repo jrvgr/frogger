@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Run the emupod scripts that check Frogger (each exits 1 on a wrong step), a few at a time, on a
 Frogger image of the loader just built. Needs tools/emupod/setup.sh and mkcards.py done, and
-build/fw/osos.img (tools/fwtool.py extract). Logs go to build/emupod-work/logs/.
+build/fw/osos.img (tools/fwtool.py extract). Logs go to build/emupod-work/logs/. pytest runs the same
+checks (tests/test_emupod.py: `pytest -n auto -m emupod`); a new check goes in CHECKS for both.
 
     tools/emupod/runtests.py [-j 4] [SCRIPT...]    # default: all of CHECKS
 """
@@ -13,7 +14,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 LOGS = ROOT / "build/emupod-work/logs"
 CHECKS = ["holdmenu2", "upnext", "unhide", "quicksettings", "queuerow", "holdrow", "npfirst", "npslide",
-          "npscrub", "resume", "readonly", "skips", "heaptop", "battery", "switches"]
+          "npscrub", "resume", "readonly", "skips", "heaptop", "battery", "switches", "diskhang"]
 
 
 def run(name):

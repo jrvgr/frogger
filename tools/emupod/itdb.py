@@ -1,6 +1,6 @@
 """iTunesDB records for test cards (mhbd v9), as Apple's 2.3 reads them: hmcard.py and the scripts that
 write their own database use these; mhit(..., hidden=True) sets Frogger's hide flag."""
-import struct, sys
+import struct
 MHOD_TYPES = {"title": 1, "location": 2, "album": 3, "artist": 4, "genre": 5}
 
 def mhod(kind, text):  # as tools/emu/itunesdb.py builds it

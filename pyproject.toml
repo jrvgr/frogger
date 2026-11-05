@@ -1,0 +1,9 @@
+# Only pytest's settings: Frogger isn't a Python package. `pytest` (nix develop) runs tests/,
+# `pytest -n auto` spreads it over the cores (pytest-xdist).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra"]  # list every skip and its reason at the end
+markers = [
+    "firmware(path): needs a file made from Apple's firmware (default build/fw/osos.img); skips without it",
+    "emupod: an emulator check from tools/emupod (nix develop .#emu, setup.sh, mkcards.py); -m 'not emupod' leaves them out",
+]

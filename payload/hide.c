@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include "hide.h"
+#include "disk.h"
 
 /* A set of track record addresses, with open addressing. 0 is an empty
  * slot, GONE one whose track was shown again (Show), which a lookup walks
@@ -242,8 +243,24 @@ void hide_show(uint32_t track)
     note(track, 1);
 }
 
+/* The hold menu's Hide or Show is done: the file written now if the disk is
+ * free, else (a refill running, or a drive that stopped answering) from a
+ * later tick, so the UI doesn't wait on the disk (disk.c) or write over a
+ * song change (skips.c). hide_flush writes one still waiting regardless. */
+static int save_pending;
+
 void hide_save(void)
 {
+    save_pending = 1;
+    if (disk_idle(DISK_IDLE_US))
+        hide_flush();
+}
+
+void hide_flush(void)
+{
+    if (!save_pending)
+        return;
+    save_pending = 0;
     save();
 }
 
@@ -254,6 +271,8 @@ void hide_tick(void)
     struct hide_file_header h;
     uint32_t len, i, pos, e[3];
 
+    if (save_pending && disk_idle(DISK_IDLE_US))
+        hide_flush();
     if (loaded || !n_tracks)
         return;
     loaded = 1;

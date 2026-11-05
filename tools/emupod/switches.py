@@ -12,7 +12,7 @@ battery reading (battery.py's stub) on music-card.img and checks, with each swit
 
 Screenshots sw_*.png. Exits 1 if a check fails."""
 import struct, sys
-from ipod3g import W, ROOT
+from ipod3g import ROOT
 import battery as bat
 
 SYM = {l.split()[2]: int(l.split()[0], 16) for l in open(ROOT / "build/payload/payload.sym") if len(l.split()) == 3}

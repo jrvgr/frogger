@@ -8,7 +8,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-command -v ipodpatcher >/dev/null || { echo "ipodpatcher not found; run inside 'nix develop'" >&2; exit 1; }
+command -v ipodpatcher >/dev/null || { echo "ipodpatcher not found: it's Rockbox's (utils/ipodpatcher), see docs/recovery.md" >&2; exit 1; }
 sudo=""; [ "$(id -u)" -eq 0 ] || sudo="sudo"
 
 confirm() {

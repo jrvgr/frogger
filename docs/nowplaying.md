@@ -14,7 +14,7 @@ stay about 25 ms before the progress bar replaces them (below, "Open").
 ## Seeing it in emupod (**confirmed**)
 
 Playback used to deadlock the emulator; that's fixed in the scratch core (the `irq_unmasked`
-hook, `tools/emupod/emupod-gen3.patch`; details in `tools/emupod/README.md`). `playshot.py` plays Tone A
+hook, `tools/emupod/emupod-gen3.patch`; details in `tools/emupod/README.md`). `probes/playshot.py` plays Tone A
 and screenshots Now Playing. The emulated audio still stops after about 2000 sample FIQs, so the
 clock and the progress bar stay at 0:00 (**open**: an emupod audio-model gap, not the firmware).
 
@@ -49,7 +49,7 @@ Opening Now Playing fetches `BMap 0x25eb/0x25ec/0x25ed/0x3329` and `Str 0x3321` 
 bundle lookup we already hook (`0x8100c` → `0x875c4`, `string_hook`), which is where a
 cover-art bitmap can come from.
 
-## Select on Now Playing (**confirmed** by VM trace, `tools/emupod/npselect.py`)
+## Select on Now Playing (**confirmed** by VM trace, `tools/emupod/probes/npselect.py`)
 
 A state machine in bytecode. Each press runs the current state's function, which calls the
 next state's setup, arms a 5 s timeout back to normal (`0x08de.method_64(5000, next)`) and

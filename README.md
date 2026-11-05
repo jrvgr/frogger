@@ -38,26 +38,40 @@ Apple's behaviour again, from the next time the feature runs. How each feature w
 
 ## Install
 
-You need a 3G iPod on firmware 2.3 and Apple's `iPod_2.2.3.ipsw` (Apple's firmware isn't in
-this repo and never will be).
+You need:
+
+- A 3rd generation iPod on Apple's firmware 2.3, the last one for the 3G (in `iPod_2.2.3.ipsw`).
+- A Mac, and Python 3.
+- Frogger's tools: [download this repo](https://github.com/jrvgr/frogger/archive/refs/heads/main.zip)
+  or `git clone` it.
+- `frogger-loader.bin` from the latest [release](https://github.com/jrvgr/frogger/releases).
+  `SHA256SUMS` next to it has its checksum (`shasum -a 256 -c SHA256SUMS`).
 
 Frogger takes the top 1 MiB of the iPod's 32 MiB of RAM for itself. That comes out of the
 song cache, so a hard drive spins up a little more often and the battery runs down a little
 sooner. A flash mod (a CF or SD card in place of the drive) is recommended for that reason.
 
-    nix develop
-    make -C loader                         # build/loader/frogger-loader.bin
-    tools/backup.sh                        # save the firmware partition first
-    sudo tools/install.py disk-install /dev/rdiskN build/loader/frogger-loader.bin --backup-dir backups
+Put the iPod in disk mode, find it with `diskutil list` (say it's `/dev/disk4`), then from the
+repo's folder:
 
-`diskutil list` shows which disk is the iPod. Restart it afterwards (hold Menu + Play). The main
-menu says "Frogger!" instead of "Settings" when Frogger is running.
+    diskutil unmountDisk /dev/disk4
+    sudo python3 tools/install.py disk-install /dev/rdisk4 frogger-loader.bin --backup-dir backups
+
+It saves the whole firmware partition to `backups/` before it changes anything. Keep a copy of
+that file somewhere else too. Restart the iPod (hold Menu + Play). The main menu says
+"Frogger!" instead of "Settings" when Frogger is running.
+
+`frogger-loader-debug.bin` is the same with a crash recorder: after a crash, the next boot
+writes `iPod_Control/iTunes/FroggerDebug`. Attach it to a bug report.
+
+To build the loader yourself, see [CONTRIBUTING.md](CONTRIBUTING.md#building).
 
 ## Getting back to stock
 
 - Hold **Menu** while the iPod starts: stock firmware, nothing patched.
-- `sudo tools/install.py disk-remove /dev/rdiskN --backup-dir backups`: take Frogger out.
-- `tools/restore.sh`: put the backup from `tools/backup.sh` back, byte for byte.
+- `sudo python3 tools/install.py disk-remove /dev/rdiskN --backup-dir backups`: take Frogger out.
+- `sudo python3 tools/install.py disk-restore /dev/rdiskN backups/FILE`: put a saved firmware
+  partition back, byte for byte.
 - [docs/recovery.md](docs/recovery.md) has disk mode and the rest.
 
 ## Without Crate
@@ -72,32 +86,14 @@ skips, songs added to playlists, mix positions) when it syncs. Until it's out,
 
 `tools/coverart.py /Volumes/IPOD` writes the covers (FroggerArt) from the pictures in the
 songs, your music folders (`--library`) or pictures you pick (`--map`); it needs Pillow, which
-`nix develop` has (or `uv run tools/coverart.py ...` fetches it). Run it after every sync. Without FroggerArt the cover page shows a frog
-instead of covers. Any other syncing app
-writes a new database, and the iPod then ignores Frogger's files from before it.
+`nix develop` has (or `uv run tools/coverart.py ...` fetches it). Run it after every sync.
+Without FroggerArt the cover page shows a frog instead of covers. Any other syncing app writes a
+new database, and the iPod then ignores Frogger's files from before it.
 
-## Development
+## Contributing
 
-    nix develop                                     # toolchain, Python with Unicorn
-    make -C loader
-    python3 -m unittest discover -s tests
-
-Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Emulator tests:
-[tools/emupod/README.md](tools/emupod/README.md). CI runs both, fetching the firmware from
-Apple. `docs/addresses.md` maps every firmware address Frogger uses: start there for a new
-feature. A debug build (`make -C loader DEBUG=1`) writes a crash record to
-`iPod_Control/iTunes/FroggerDebug` on the next boot (`payload/debug.c`).
-
-| Path | What |
-| --- | --- |
-| `loader/` | Runs first at boot, patches Apple's OS in RAM |
-| `payload/` | The features, resident next to Apple's OS |
-| `tools/install.py` | Puts the loader in the firmware partition and takes it out |
-| `tools/podinfo.py` | Frogger's data on a mounted iPod |
-| `tools/fwtool.py` | Lists and extracts the images in an `.ipsw` |
-| `tools/emu/`, `tools/emupod/` | Unicorn harness, emulator tests |
-| `tools/re/` | Reverse-engineering helpers |
-| `docs/` | Notes on firmware 2.3 |
+Bugs, ideas and fixes are welcome: open an issue from one of the forms. Building, the tests and
+how the code is laid out are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

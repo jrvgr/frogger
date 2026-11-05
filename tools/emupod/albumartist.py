@@ -7,7 +7,7 @@ Stock lists Doc Scott and Peshay; Frogger lists LTJ Bukem › Blue Notes with bo
 
     tools/emupod/albumartist.py [--stock] [--card build/emupod-work/hide-card.img]
 """
-import argparse, contextlib, importlib.util, io, shutil, struct, subprocess, sys
+import argparse, shutil, struct, subprocess
 from pathlib import Path
 from ipod3g import Pod, W, OSOS
 

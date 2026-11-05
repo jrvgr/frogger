@@ -19,7 +19,9 @@ expects, so a wrong firmware version boots stock instead of crashing.
 
 ## Before the first install: back up
 
-Connect the iPod in disk mode (below), then inside `nix develop`:
+`tools/install.py` saves the firmware partition every time it writes, so this is an extra.
+It needs `ipodpatcher` from Rockbox (`utils/ipodpatcher` in Rockbox's source; `nix develop`
+doesn't have it). Connect the iPod in disk mode (below), then:
 
     tools/backup.sh
 

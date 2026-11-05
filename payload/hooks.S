@@ -1,5 +1,6 @@
 /* Hooks from Apple's osos into the payload's C (hide.c, settings.c, art.c,
- * nowplaying.c, artist.c, queue.c, holdmenu.c, letters.c, resume.c, skips.c). Each replaces one instruction with
+ * nowplaying.c, artist.c, queue.c, holdmenu.c, letters.c, resume.c, skips.c,
+ * disk.c). Each replaces one instruction with
  * a BL here (the table in tools/mkpayload.py), redoes that instruction,
  * and returns. Stack offsets are into the hooked function's frame, plus
  * whatever the hook pushed. */
@@ -437,6 +438,7 @@ tick_hook:
     bl      letter_tick             @ letters.c
     bl      hide_tick               @ hide.c: FroggerHidden, once a database has loaded
     bl      skips_tick              @ skips.c: FroggerSkips, the same
+    bl      playlist_tick           @ playlist.c: a playlist save that waited for the disk
     bl      np_tick                 @ nowplaying.c: a held LCD let go
 #ifdef FROGGER_DEBUG
     bl      debug_tick              @ debug.c: the last boot's record, once
@@ -559,6 +561,7 @@ counts_hook:
     push    {r0, r1, r2, r3, r12, lr}
     bl      resume_flush
     bl      skips_save              @ skips.c: FroggerSkips, at the same moments
+    bl      hide_flush              @ hide.c: FroggerHidden, if its save is still waiting for the disk
     pop     {r0, r1, r2, r3, r12, lr}
     push    {r4, r5, r6, r7, r8, r9, sl, fp, lr}
     ldr     pc, =0xf4d70
@@ -589,5 +592,58 @@ skip_pick_hook:
     pop     {r0, r1, r2, r3, r12, lr}
     push    {r3, r4, r5, lr}
     ldr     pc, =0xb8eb8
+
+    .ltorg
+
+/* The disk coming back after it stopped answering (disk.c). */
+
+/* 0xc347c, the first instruction of 0xc347c(obj, unit), the drive re-init
+ * Apple runs before the next command once a reset set obj+0x1e0 (was: push
+ * {r2-r6, lr}). disk_reinit soft-resets a drive that is still busy first.
+ * Entered with B; back at 0xc3480. */
+    .global disk_reinit_hook
+disk_reinit_hook:
+    push    {r0, r1, r2, r3, r12, lr}
+    bl      disk_reinit
+    pop     {r0, r1, r2, r3, r12, lr}
+    push    {r2, r3, r4, r5, r6, lr}
+    ldr     pc, =0xc3480
+
+/* 0xc788c, the first instruction of the ATA read 0xc788c(obj, unit, lba,
+ * buf, count), vtable slot +0xc's callee (was: push {r2-r10, lr}). Runs it,
+ * and runs it again (up to DISK_READ_TRIES in all) while it fails with a
+ * re-init pending (obj+0x1e0: the command timed out and Apple reset its
+ * controller), so the retry goes through disk_reinit_hook. Any other failure
+ * returns at once, as before. disk_read_begin and disk_read_end count the
+ * reads running for disk_idle. Entered with B. */
+#define DISK_READ_TRIES 3
+    .global disk_read_hook
+disk_read_hook:
+    push    {r0, r1, r2, r3, r4, r5, lr}    @ the caller's count is now at [sp, #28]
+    bl      disk_read_begin         @ disk.c: one more read running (r0: obj)
+    mov     r4, #DISK_READ_TRIES
+1:  ldr     r12, [sp, #28]
+    push    {r12}                   @ count, the fifth argument, again
+    add     r12, sp, #4
+    ldm     r12, {r0, r1, r2, r3}
+    bl      disk_read_orig
+    add     sp, sp, #4
+    cmp     r0, #0
+    beq     2f
+    subs    r4, r4, #1
+    beq     2f
+    ldr     r1, [sp]                @ obj
+    ldr     r1, [r1, #0x1e0]
+    cmp     r1, #0
+    bne     1b
+2:  mov     r5, r0
+    bl      disk_read_end           @ disk.c: and it's done
+    mov     r0, r5
+    add     sp, sp, #16
+    pop     {r4, r5, pc}
+/* Apple's 0xc788c itself: the replaced push, then the rest. */
+disk_read_orig:
+    push    {r2, r3, r4, r5, r6, r7, r8, r9, sl, lr}
+    ldr     pc, =0xc7890
 
     .ltorg

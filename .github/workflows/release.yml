@@ -1,0 +1,85 @@
+name: Release
+
+# Publishes the loader as a GitHub release: frogger-loader.bin (what tools/install.py installs), a
+# DEBUG=1 build that writes a crash record, and their checksums, after every CI check passes.
+# Only Frogger's own code is in them: Apple's firmware is fetched for the tests and never published.
+#
+# Two ways to start it:
+#   - Actions > Release > Run workflow, with a version like v0.3: tags main's head and publishes.
+#   - Push a tag yourself: git tag v0.3 && git push origin v0.3
+# A version with a dash (v0.3-rc1) is published as a pre-release. The notes are grouped by the
+# pull requests' type: labels (.github/release.yml).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag and publish, like v0.3 (v0.3-rc1 for a pre-release)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: Tag the version
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check and push the tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Run it on main"; exit 1; }
+          echo "$VERSION" | grep -qE '^v[0-9]+(\.[0-9]+){0,2}(-[0-9A-Za-z.]+)?$' \
+            || { echo "::error::$VERSION isn't a version like v0.3 or v0.3-rc1"; exit 1; }
+          git fetch --tags --quiet
+          ! git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null \
+            || { echo "::error::$VERSION is tagged already"; exit 1; }
+          git tag "$VERSION" "$GITHUB_SHA"
+          # (A tag pushed with this job's token starts no workflow, so the jobs below publish it.)
+          git push origin "refs/tags/$VERSION"
+
+  checks:
+    needs: tag
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Publish the loader
+    needs: checks
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-build-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-build-${{ runner.os }}-
+          save: false
+      - name: Build the loader, plain and DEBUG=1
+        run: |
+          nix develop -c make -C loader DEBUG=1
+          cp build/loader/frogger-loader.bin frogger-loader-debug.bin
+          nix develop -c make -C loader clean
+          nix develop -c make -C loader
+          cp build/loader/frogger-loader.bin frogger-loader.bin
+          sha256sum frogger-loader.bin frogger-loader-debug.bin > SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=()
+          case "$TAG" in *-*) pre=(--prerelease);; esac
+          gh release create "$TAG" frogger-loader.bin frogger-loader-debug.bin SHA256SUMS \
+            --verify-tag --title "Frogger $TAG" --generate-notes "${pre[@]}"

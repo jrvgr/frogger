@@ -1,0 +1,34 @@
+name: Flake update
+
+# Once a month, a pull request that moves flake.lock to the newest nixpkgs (the toolchain:
+# arm-none-eabi-gcc, Python, Rust). Its CI shows whether the build and tests still pass.
+# A pull request opened with the workflow's own token starts no CI: close and reopen it to run
+# the checks (or set a FLAKE_UPDATE_TOKEN secret, a token that can open pull requests).
+
+on:
+  schedule:
+    - cron: '17 4 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: nix flake update
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+      - uses: DeterminateSystems/update-flake-lock@v29
+        with:
+          token: ${{ secrets.FLAKE_UPDATE_TOKEN || github.token }}
+          branch: flake-update
+          commit-msg: 'flake.lock: update nixpkgs'
+          pr-title: 'flake.lock: update nixpkgs'
+          pr-labels: |
+            type: chore
+            area: emulator

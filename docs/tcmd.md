@@ -10,8 +10,8 @@ Tools:
 
     tools/re/tcmd.py info | fn N | at OFFSET | all | check   # disassembler (this doc's notation)
     tools/re/resources.py menus                             # Menu resources, 10 words per item
-    tools/emupod/settrace.py ROW                            # VM trace: Select on Settings row ROW
-    tools/emupod/vmtrace.py ROW                             # VM trace: Select on main-menu row ROW
+    tools/emupod/probes/settrace.py ROW                     # VM trace: Select on Settings row ROW
+    tools/emupod/probes/vmtrace.py ROW                      # VM trace: Select on main-menu row ROW
 
 The emupod scripts need the scratch emulator (`third_party/emupod`, set up by `tools/emupod/setup.sh`; see "Running it" below).
 
@@ -157,7 +157,7 @@ bit 16 of the prefs flags word (`prefs+0xb04`; Apple only uses bits 0 Clicker an
 `0x7403c`'s callers `0xa4384`, `0xe63b8`…, written only through `0xd85cc`, which keeps the other
 bits). `setting_set` writes it with Apple's `0xd85cc(library, flags)`, which also marks the prefs
 dirty (`0xacfac`, `prefs+0xb40`); Apple writes them to disk when the iPod sleeps (hold Play) or
-shuts down, not right away (**confirmed** in emupod: `tools/emupod/persist.py set`, then
+shuts down, not right away (**confirmed** in emupod: `tools/emupod/probes/persist.py set`, then
 `persist.py check` in a new process). The library object's word 0 is the prefs struct, and the
 settings object keeps the library at `+0x54`; `browse_hook` gets the library as `r0` and calls
 `settings_sync()`, so the saved value applies from boot.
@@ -177,7 +177,7 @@ How it's built:
   ours) and `setting_set(item, msg*)`.
 
 Findings this relies on (**confirmed** in emupod): toggling any on/off item runs the shared
-bytecode fn 50 → fn 273, never the item's own function (`tools/emupod/whenfn.py`), so an id
+bytecode fn 50 → fn 273, never the item's own function (`tools/emupod/probes/whenfn.py`), so an id
 with no bytecode function behind it is fine. Word 5's `0x03NN` (we use `0x10`, after Clicker's
 `0x0f`) draws fine; what `NN` means exactly is still unknown.
 
@@ -192,7 +192,7 @@ with no bytecode function behind it is fine. Word 5's `0x03NN` (we use `0x10`, a
 4. `loader/settings.c`: insert one more cloned item (and bump the `+ 1` in `settings_menu`'s size
    in `settings.h`, and the expectations in `tests/test_install.py`).
 5. `make -C loader && nix develop -c python3 tools/emupod/mkimage.py && cd tools/emupod &&
-   python3 frogset.py`, and look at the screenshots in `build/emupod-work/`.
+   python3 probes/frogset.py`, and look at the screenshots in `build/emupod-work/`.
 
 A setting with more than two values (like Shuffle's Off/Songs/Albums) uses other messages
 (`0x282f` only flips); trace a stock one with `sethandler.py` first. A submenu item
@@ -216,6 +216,35 @@ the UI is up. Each takes effect the next time the feature runs, no restart:
 | Battery Percent | `battery_state`, `battery_resource` | Apple's state and level bitmaps, from the next battery reading |
 | Page Slide | `slide_begin` | the page switch as it's drawn |
 
+### On the disk: `iPod_Control/Device/Preferences` (**confirmed** on a device)
+
+Apple saves the prefs struct to `iPod_Control/Device/Preferences` (2,872 bytes on 2.3), **starting
+at `prefs+8`**: file offset = struct offset − 8. So the prefs flags word (`prefs+0xb04`) is the
+little-endian u32 at **file offset `0xafc`**, and all of Frogger's switches live there:
+
+| Bit | Switch | Set means |
+| --- | --- | --- |
+| 0 | Clicker (Apple's) | On |
+| 1 | Apple's, see re-notes | |
+| 16 | Show Hidden | On (off by default) |
+| 17 | Jump by Letter | Off |
+| 18 | Resume Mixes | Off |
+| 19 + `FEATURE_*` (19–23) | Cover Page, Hold Menu, Quick Settings, Battery Percent, Page Slide | Off |
+| 24–26 | the backlight timer's last value other than Off and Always On | 0 = none yet |
+
+Found on a real iPod 3G (2026-11-03): with a copy of the file taken, Settings › Show Hidden was
+switched On, the iPod put to sleep (hold Play) and remounted; the only change in the file was bit 16
+of the word at `0xafc` (`0x03000001` → `0x03010001`: Clicker on, timer value 3).
+
+A syncing app (Crate) can set the switches by changing those bits in the file while the iPod is in
+disk mode; keep every other bit and byte as it is. The firmware reads the file when it starts, so a
+change applies from the next boot. It writes the file back from memory when it sleeps or shuts down,
+so a change made while the OS runs is lost.
+
+emupod doesn't show this: going to sleep there makes no disk writes, and no `Preferences` file
+appears on the card (`persist.py` keeps the setting some other way). Use a device for anything
+about the saved file.
+
 Settings, like every list, opens on the row it was last left on: scripts scroll to the top
 first (`switches.py`). Nine Frogger rows now; a "Frogger" submenu (above) would tidy them.
 
@@ -227,7 +256,7 @@ first (`switches.py`). Nine Frogger rows now; a "Frogger" submenu (above) would 
 
 ## The hold menu (**working in emupod**, `payload/holdmenu.c`)
 
-Found with `tools/emupod/popuptrace.py` (every bytecode step and native method entry while
+Found with `tools/emupod/probes/popuptrace.py` (every bytecode step and native method entry while
 holding Select, opening Clear Playlist and Save Playlist, written to `popuptrace.json`) and
 `popupsends.py` (the native method behind each send). Native methods all go through
 `0x129808` → `0xa152c` and are entered with `lr = 0xa18a8`, which is how to pick them out.

@@ -248,3 +248,68 @@ It is likely the boot or disk-mode low-level path (**likely**). The IDE FIFO cop
 - Idle timeout: 12.8 s after the last disk access (emulation, confirmed); its code is not located.
   The spin-down path goes through the message system (type 14, sub-op 2 → `0x134bc8`).
 - Read-ahead size per wake: not located or measured.
+
+## Part C: the disk that stops answering (confirmed in emupod)
+
+On a device with an SD adapter in place of the hard drive, a supply dip while the music cache
+refills at a song change (worse with albums of big files) leaves the adapter silent: the audio
+already in RAM plays out, then no song or cover loads until a restart, and Frogger's UI freezes
+(`art.c`'s cover read runs on the UI loop). The emulator reproduces it.
+
+**Fault injection** (in `emupod-gen3.patch`): `EMUPOD_ATA_HANG="skip,ms"` or
+`Machine.ata_hang(skip, ms)`. After `skip` more read commands the next one hangs the drive: BSY
+for good, no INTRQ, further commands ignored (logged `IGNORED`), until a soft reset (device
+control `0xc00033f8` bit 2 set, then cleared) or, with `ms`, until that long has passed. A
+reset after a hang also drops SET MULTIPLE, as a power-cycled drive would. `stats()` has
+`ata_hangs` and `ata_resets`; `ata_log()` returns the command log.
+
+**What stock 2.3 does** (`ata_hang(0, 0)` from Songs, then Select on Tone A):
+
+1. The read (`0xc788c` → builder `0xdf014` → `0x12d180`, 10 s timeout) waits on the semaphore
+   `ata+0xd8` (`0x93248` from the state handler `0x12fea0`). The time runs out; the handler posts
+   **event 5** through `0x11ac00` (`ata+0x174 = table + 4 + 8·event`), whose handler is
+   **`0x1302a0`**: `+0x18c = 0xff`, error `0x400` into `+0x190`, then **`0x913d0`**, then event 0
+   (done). The other handlers that post 5 check the timeout with `0xe7290` (`0x12ff68`,
+   `0x1300bc`, `0x1301fc`) or a failed wait (`0x130040`).
+2. `0x913d0` writes `4`, then `0` to **`0xcf005034`**: a reset of the PP5002's IDE *controller*,
+   not of the drive. It redoes the timings (`0xdda40`) and sets **`ata+0x1e0`** (re-init
+   pending). Apple never sends SRST or DEVICE RESET to an ATA drive.
+3. The caller retries once, 6 ms later. `0xc788c` (and the dispatcher `0x9da1c`) run the re-init
+   **`0xc347c`** first while `+0x1e0` is set: a 300 µs BSY/DRQ check (`0x13f9c4`, n = 30); it
+   fails, so `0x913d0` again and `0x400` at once. (When the drive answers, `0xc347c` redoes SET
+   FEATURES for the transfer modes, `0xddae0`, and SET MULTIPLE, then clears `+0x1e0` at `0xc3560`.)
+4. The reader is **TrackCacheReadTask** (`0xe9c4c`; stack `0x122674` → `0x6c15c` → `0x734ec` →
+   `0xc7b70` → `0xc7720` → `0xc788c`). It takes the error and goes back to waiting on its event
+   (`0xe9c6c`). After that **no command ever reaches the disk again** (187 commands, then
+   nothing, also when another song is picked); the CPU sits idle. So it's not an endless retry
+   or a thread blocked for good: the drive is never reset, the one retry fails at once, and the
+   refill is dropped.
+
+**The fix** (`payload/disk.c`, `hooks.S`): `disk_reinit_hook` at `0xc347c` soft-resets a drive
+that still shows BSY or DRQ (SRST for 20 µs, 2 ms, then `0x13fa14` waits up to 3.1 s (Apple's wake value; maybe ~31 s real, as `0x3460` steps are 10 ms in emupod) for BSY
+clear, sleeping 1 ms a step; then nIEN off), and Apple's re-init goes on from there.
+`disk_read_hook` at `0xc788c` runs the read again, up to 3 tries in all, while it fails with
+`+0x1e0` set, so the timed-out read itself comes back and the cache task never sees an error.
+Worst case before giving up as before: 3 × 10 s timeouts plus 2 × 3.1 s waits, on the reading task.
+
+In emupod (`tools/emupod/diskhang.py`): read times out at 10.2 s → `0x913d0` → retry →
+SRST → `0xEF` sub 3, `0xC6` → the read is done 2 ms later; 1671 reads follow and Next still
+reads Tone B. Not known without a device: whether the adapter comes back from SRST (or needs
+its power cycled, which the iPod can't do: no drive power GPIO, B.2), and how long it takes.
+
+**The UI while the disk is stuck.** Frogger's cover read used to run on the UI loop (`np_vm` →
+`np_art_update` → `fw_open`/`fw_read`), so the wheel, the menus and Now Playing froze for the
+whole timeout and recovery; stock 2.3 reads nothing on the UI side at a song change. Now
+`art.c` starts a task of its own, **FroggerArt** (`0xac6fc`, as `0x54da8` starts
+TrackCacheReadTask), on the first song: the UI hands it the record to read (and goes on), the
+task reads into a buffer of its own, and the UI copies the result into the cover's BMap from
+`np_vm` or the quarter-second tick and redraws it if it's up. The task polls every 3 ticks
+(`0x3460(0, 3)`, 30 ms) while idle. A failed read is still retried when Now Playing next opens
+(`np_art_retry`). The hold menu's Hide (`hide_save`) and a playlist save (`playlist_pick`)
+write at once only when `disk_idle` says no read has run for 0.5 s (`disk_read_hook` counts
+reads and notes when the last ended), no re-init is pending and the drive isn't BSY/DRQ;
+otherwise from a later tick once it is (and a Hide waiting still goes out with Play Counts,
+`counts_hook`). In emupod (`diskhang.py art`, `art-card.img`): song 2's cover read hangs the
+drive; 2.7 s later, drive still hung, Menu and the wheel move Songs' highlight, and after the
+recovery song 2's cover is up. With the read forced back onto the UI (FroggerArt marked
+unavailable) the same run fails: the wheel does nothing during the hang.

@@ -1,0 +1,16 @@
+# The notes `gh release create --generate-notes` writes (release.yml): merged pull requests,
+# grouped by their type: label.
+changelog:
+  exclude:
+    authors: ['dependabot', 'dependabot[bot]', 'github-actions', 'github-actions[bot]']
+  categories:
+    - title: New features
+      labels: ['type: feature']
+    - title: Fixes
+      labels: ['type: bug']
+    - title: Docs
+      labels: ['type: docs']
+    - title: Tests, CI and tools
+      labels: ['type: chore']
+    - title: Other changes
+      labels: ['*']

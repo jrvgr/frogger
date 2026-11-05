@@ -52,10 +52,74 @@ index c2639fb..edb3149 100644
      #[inline(always)]
      fn skip_enabled(&self) -> bool {
 diff --git a/rust/pp5002/src/ata.rs b/rust/pp5002/src/ata.rs
-index e76af14..69bc96d 100644
+index e76af14..2260226 100644
 --- a/rust/pp5002/src/ata.rs
 +++ b/rust/pp5002/src/ata.rs
-@@ -371,6 +371,11 @@ impl Ata {
+@@ -105,6 +105,13 @@ pub struct Ata {
+     /// the device control register's last value (bit 2 = SRST)
+     devctl: u32,
+     pub resets: u64,
++    /// (3G study, fault injection) armed with env EMUPOD_ATA_HANG="skip,ms" or hang(): after `skip` more read commands the next one
++    /// hangs the drive (the SD adapter's supply dip): BSY for good, no INTRQ, further commands ignored, until SRST (device control
++    /// bit 2 set, then cleared) or, with ms != 0, until that long has passed. Value: (reads still let through, duration in us).
++    hang_arm: Option<(u32, u64)>,
++    /// the emulated time the hang ends (u64::MAX: only SRST ends it); 0: not hung
++    hung_until: u64,
++    pub hangs: u64,
+ }
+ 
+ fn slot(a: u32) -> usize {
+@@ -169,9 +176,38 @@ impl Ata {
+             intrq: false,
+             devctl: 0,
+             resets: 0,
++            hang_arm: Self::hang_env(),
++            hung_until: 0,
++            hangs: 0,
+         }
+     }
+ 
++    #[cfg(not(target_arch = "wasm32"))]
++    fn hang_env() -> Option<(u32, u64)> {
++        let v = std::env::var("EMUPOD_ATA_HANG").ok()?;
++        let mut it = v.split(',');
++        let skip = it.next()?.trim().parse().ok()?;
++        let ms: u64 = it.next().and_then(|m| m.trim().parse().ok()).unwrap_or(0);
++        Some((skip, ms * 1000))
++    }
++    #[cfg(target_arch = "wasm32")]
++    fn hang_env() -> Option<(u32, u64)> {
++        None
++    }
++
++    /// Arm the fault: after `skip` more read commands the next hangs the drive for `us` microseconds (0: until a soft reset).
++    pub fn hang(&mut self, skip: u32, us: u64) {
++        self.hang_arm = Some((skip, us));
++    }
++
++    /// Whether the drive is hung at `now` (the timed hang ends by itself).
++    pub fn hung(&mut self, now: u64) -> bool {
++        if self.hung_until != 0 && now >= self.hung_until {
++            self.hung_until = 0;
++        }
++        self.hung_until != 0
++    }
++
+     fn sector(&self, l: u64) -> [u8; 512] {
+         if let Some(s) = self.overlay.get(&l) {
+             return *s;
+@@ -251,6 +287,10 @@ impl Ata {
+     }
+ 
+     pub fn status(&mut self, now: u64) -> u32 {
++        if self.hung(now) {
++            self.bsy_served += 1;
++            return BSY;
++        }
+         if self.bsy > 0 {
+             self.bsy -= 1;
+             self.bsy_served += 1;
+@@ -371,10 +411,23 @@ impl Ata {
          }
      }
  
@@ -67,6 +131,49 @@ index e76af14..69bc96d 100644
      /// A write to the device control register (0xc00033f8). Clearing SRST after setting it resets the drive: what it was doing is
      /// dropped and the registers hold the signature of an ATA device (count 1, sector 1, cylinder 0/0), with diagnostics passed.
      pub fn control(&mut self, v: u32) {
+         if self.devctl & 4 != 0 && v & 4 == 0 {
++            if self.hangs != 0 {
++                // a drive that went away comes back as after power-up: no multiple mode, nothing pending
++                self.multiple = 0;
++                self.hung_until = 0;
++                self.ready_at = 0;
++                self.bsy = 0;
++                self.intrq = false;
++            }
+             self.r = [1, 1, 0, 0, 0, 0, 0, 0];
+             self.hob = [0; 4];
+             self.err = 1;
+@@ -402,6 +455,10 @@ impl Ata {
+     }
+ 
+     fn cmd(&mut self, mut c: u32, now: u64) {
++        if self.hung(now) {
++            self.log.push((c, self.feat, 0, 0, "IGNORED (drive hung)"));
++            return;
++        }
+         let opcode = c;
+         let (n, lba): (u64, u64);
+         if let Some(c2) = Self::ext(c) {
+@@ -443,6 +500,19 @@ impl Ata {
+             self.log.push((opcode, self.feat, n as u32, lba, "STALL (drive powered down)"));
+             return;
+         }
++        if matches!(c, 0x20 | 0x21 | 0xc4 | 0xc8) {
++            if let Some((skip, us)) = self.hang_arm {
++                if skip == 0 {
++                    self.hang_arm = None;
++                    self.hung_until = if us == 0 { u64::MAX } else { now + us };
++                    self.hangs += 1;
++                    self.intrq = false;
++                    self.log.push((opcode, self.feat, n as u32, lba, "HANG (drive stops answering)"));
++                    return;
++                }
++                self.hang_arm = Some((skip - 1, us));
++            }
++        }
+         if c == 0x90 {
+             self.err = 0x01;
+         } else if c == 0xec {
 diff --git a/rust/pp5002/src/lib.rs b/rust/pp5002/src/lib.rs
 index d03a3ed..6a730fa 100644
 --- a/rust/pp5002/src/lib.rs
@@ -262,20 +369,32 @@ index d03a3ed..6a730fa 100644
      }
  
 diff --git a/rust/pybind/src/lib.rs b/rust/pybind/src/lib.rs
-index d7089a9..4edfb2f 100644
+index d7089a9..0bf68fa 100644
 --- a/rust/pybind/src/lib.rs
 +++ b/rust/pybind/src/lib.rs
-@@ -246,6 +246,7 @@ impl Machine {
+@@ -246,6 +246,9 @@ impl Machine {
          m.insert("cpu_ipus", s.cfg.ipus);
          m.insert("cop_ipus", s.cfg.cop_ipus);
          m.insert("ata_cmds", s.ata.n_cmds);
 +        m.insert("ide_irqs", s.ide_irqs);
++        m.insert("ata_hangs", s.ata.hangs);
++        m.insert("ata_resets", s.ata.resets);
          m.insert("ata_reads", s.ata.n_reads);
          m.insert("ata_writes", s.ata.n_writes);
          m.insert("ata_sectors_read", s.ata.sectors_read);
-@@ -291,11 +292,19 @@ impl Machine {
+@@ -290,12 +293,29 @@ impl Machine {
+     fn ata_power(&self) -> (Vec<(u64, u32, u32, u32, u32)>, u64) {
          (self.m.s.ata.power_log.clone(), self.m.s.ata.stalled)
      }
++    /// (fault injection) after `skip` more read commands the next one hangs the drive: BSY for good until a soft reset, or for `ms` ms.
++    #[pyo3(signature = (skip=0, ms=0))]
++    fn ata_hang(&mut self, skip: u32, ms: u64) {
++        self.m.s.ata.hang(skip, ms * 1000);
++    }
++    /// (fault injection) the ATA command log: (opcode, features, count, lba, outcome).
++    fn ata_log(&self) -> Vec<(u32, u32, u32, u64, String)> {
++        self.m.s.ata.log.iter().map(|(a, b, c, d, e)| (*a, *b, *c, *d, e.to_string())).collect()
++    }
      /// (study) log every execution of these CPU addresses as (now_us, pc, [r0..r15], peek); peek_reg/peek_off also record the word at r[peek_reg]+peek_off; read with hook_log. Empty list: off.
 -    #[pyo3(signature = (pcs, peek_reg=None, peek_off=0))]
 -    fn hook_start(&mut self, pcs: Vec<u32>, peek_reg: Option<usize>, peek_off: u32) {

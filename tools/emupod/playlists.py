@@ -42,7 +42,6 @@ if step == "resync":
                     str(db), "::/iPod_Control/iTunes/iTunesDB"], check=True)
     db.unlink()
 if step in ("synced", "order", "order2", "order3"):                       # Mix: Tone A only
-    import contextlib, importlib.util, io
     import itdb as mkdb
     shutil.copy(W + "/music-card.img", card)
     loc = lambda name: ":iPod_Control:Music:F00:%s.mp3" % name
@@ -101,9 +100,11 @@ def shot(name):
     print(p.shot("pl_%s.png" % name, 1))
 
 
-def add_to_playlist(pick_row, tag):
+def add_to_playlist(pick_row, tag, row=2):
+    """Hold, then the popup's Add to Playlist: row 2 on a song (Add to Queue, Play Album Next,
+    Add to Playlist, ...), row 1 on an album, artist or playlist (no Play Album Next)."""
     p.press("select", hold_us=2_000_000); p.settle()
-    wheel(1); sel(); shot(tag + "_picker")
+    wheel(row); sel(); shot(tag + "_picker")
     wheel(-6); wheel(pick_row); sel(2_000_000); shot(tag + "_back")
 
 
@@ -111,14 +112,14 @@ if step == "add":
     sel()                                                       # first run: Language -> English
     sel(); wheel(3); sel()                                      # Music > Songs
     lists("start")
-    add_to_playlist(0, "a")                                     # rows: On-The-Go only
+    add_to_playlist(1, "a")                                     # rows: Mix, On-The-Go
     lists("Tone A > On-The-Go")
     menu(); wheel(-6); sel(); sel(); shot("otg")                # Music > Playlists > On-The-Go
     wheel(2); sel(); wheel(1); sel(2_000_000)                   # Save Playlist > confirm
     lists("saved New Playlist 1")
     shot("saved")                                               # (Save lands in Playlists)
     menu(); wheel(-6); wheel(3); sel(); wheel(1)                # Music > Songs, Tone B
-    add_to_playlist(0, "b")                                     # rows: New Playlist 1, On-The-Go
+    add_to_playlist(1, "b")                                     # rows: Mix, New Playlist 1, On-The-Go
     lists("Tone B > New Playlist 1")
     menu(3)
     p.press("play", hold_us=3_000_000, after_us=10_000_000)     # sleep
@@ -129,7 +130,7 @@ if step == "add":
                           "::/iPod_Control/iTunes"], capture_output=True, text=True).stdout)
 elif step == "album":
     sel(); sel(); wheel(2); sel(); wheel(1); sel(); shot("album_before")   # Music > Albums > first album
-    add_to_playlist(0, "album")
+    add_to_playlist(1, "album")                                 # rows: Mix, On-The-Go
     lists("album song > On-The-Go")
 elif step in ("synced", "order", "order2", "order3"):
     sel(); sel(); wheel(3); sel(); wheel(1 if step == "synced" else 3)   # (Language), Music > Songs, Tone B (D)
@@ -156,7 +157,7 @@ elif step == "lists":
         return "nothing" if not it else "list %x" % rd(it)
     wheel(-6); sel(); wheel(1); sel(); shot("artists")           # Music > Artists
     lists("Artists")
-    add_to_playlist(5, "artist")                                # picker rows: Mix, On-The-Go
+    add_to_playlist(5, "artist", 1)                            # picker rows: Mix, On-The-Go
     lists("artist > On-The-Go")
     menu(); wheel(-6); sel(); shot("playlists")                 # Music > Playlists
     p.press("select", hold_us=2_000_000); p.settle(); shot("mix_popup")

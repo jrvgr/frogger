@@ -9,7 +9,7 @@ Songs (by title): Apple, Bravo, Delta, Echo, Kite, Moon, Zebra. The audio is the
 tones, taken in turn. make(name, hidden=()) copies music-card.img to name with this iTunesDB
 (hidden: titles that get Frogger's hide flag) and returns its path."""
 import itdb as mkdb
-import contextlib, importlib.util, io, shutil, struct, subprocess, sys
+import shutil, struct, subprocess
 from pathlib import Path
 from ipod3g import W
 

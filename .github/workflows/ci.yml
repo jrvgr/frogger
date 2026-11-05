@@ -2,19 +2,47 @@ name: CI
 
 on:
   push:
+    branches: ['**']  # not tags: release.yml runs these checks for a tag
   pull_request:
+  workflow_call:      # release.yml runs every check before it publishes
+
+permissions:
+  contents: read
+
+# A new push to a pull request stops the run for the one before it. Every other run (pushes,
+# releases) gets a group of its own, so none waits or is cancelled.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v30
+      - name: ruff (errors only, see ruff.toml) and shellcheck
+        run: |
+          nix shell --inputs-from . nixpkgs#ruff nixpkgs#shellcheck -c bash -c \
+            'ruff check . && shellcheck tools/*.sh tools/emupod/*.sh'
+
   build:
     name: Build and unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v30
+      # The Nix store (the dev shell's toolchain), kept until flake.nix or flake.lock changes.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-build-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-build-${{ runner.os }}-
+          gc-max-store-size-linux: 3G
       - name: Build the loader and payload
         run: nix develop -c make -C loader
-      - name: Unit tests (the ones that need Apple's firmware skip)
-        run: nix develop -c python3 -m unittest discover -s tests -v
+      - name: Unit tests (the ones that need Apple's firmware, and the emupod checks, skip)
+        run: nix develop -c pytest -v -m 'not emupod'
 
   emulator:
     name: Firmware and emulator tests
@@ -24,10 +52,22 @@ jobs:
         with:
           submodules: true
       - uses: cachix/install-nix-action@v30
-      # Apple's firmware is never in this repo: it's fetched from Apple and checked.
+      # The Nix store (the dev shell's toolchain), kept until flake.nix or flake.lock changes.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-emu-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-emu-${{ runner.os }}-
+          gc-max-store-size-linux: 5G
+      # Apple's firmware is never in this repo: it's fetched from Apple (once, then from the
+      # Actions cache) and checked.
+      - uses: actions/cache@v4
+        with:
+          path: firmware/iPod_2.2.3.ipsw
+          key: ipsw-2.2.3-bec081f2
       - name: Firmware 2.3 from Apple
         run: |
           mkdir -p firmware
+          [ -f firmware/iPod_2.2.3.ipsw ] || \
           curl -fsSL -o firmware/iPod_2.2.3.ipsw \
             https://secure-appldnld.apple.com/iPod/SBML/osx/bundles/061-2687.20060912.IPwdC/iPod_2.2.3.ipsw
           echo "bec081f2bacd4099dcfc533048a6844c8fafb50197c60d9d7ef95075cf2c6e92  firmware/iPod_2.2.3.ipsw" | sha256sum -c
@@ -43,12 +83,13 @@ jobs:
         run: |
           nix develop .#emu -c python3 tools/fwtool.py extract firmware/iPod_2.2.3.ipsw -o build/fw
           nix develop .#emu -c make -C loader
+      # --require-firmware: a missing firmware file fails the job instead of skipping its tests.
       - name: Unit tests, all
-        run: nix develop .#emu -c python3 -m unittest discover -s tests -v
+        run: nix develop .#emu -c pytest -v --require-firmware -m 'not emupod'
       - name: Test cards
         run: nix develop .#emu -c python3 tools/emupod/mkcards.py
       - name: Emulator tests
-        run: nix develop .#emu -c python3 tools/emupod/runtests.py -j 4
+        run: nix develop .#emu -c pytest -v -n auto --durations=0 --require-firmware -m emupod
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

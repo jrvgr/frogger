@@ -1,0 +1,14 @@
+# Weekly pull requests for newer GitHub Actions. The flake (nixpkgs) has its own monthly
+# workflow, flake-update.yml. third_party/emupod stays pinned: emupod-gen3.patch is made for it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    labels: ['type: chore', 'area: emulator']
+    commit-message:
+      prefix: CI

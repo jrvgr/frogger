@@ -8,7 +8,7 @@
     tools/re/tcmd.py check                # how many functions decode to their exact length
 
 Offsets are from the code base (0x192948), the same numbers the VM trace prints
-(tools/emupod/settrace.py).
+(tools/emupod/probes/settrace.py).
 """
 
 import argparse

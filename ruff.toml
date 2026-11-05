@@ -1,0 +1,5 @@
+# `ruff check .` (CI's Lint job): errors only, not style. The scripts keep their terse style.
+extend-exclude = ["third_party", "firmware", "backups"]
+
+[lint]
+select = ["E9", "F"]

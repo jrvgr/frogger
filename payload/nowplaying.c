@@ -369,11 +369,22 @@ void np_drawn(void)
     lcd_all();
 }
 
-/* tick_hook: the switch's drain never came; show what's drawn. */
+/* A new song for the cover task (art.c), or the cover it read: the art
+ * redrawn if it's up. From np_vm and, for a cover read while the UI runs no
+ * bytecode, np_tick. */
+static void art_poll(void)
+{
+    if (!np.busy && np_art_update() && np.open && np.page == COVER)  /* the firmware's invalidate (0xda3cc, what SetVisible ends in) */
+        ((void (*)(uint32_t))0xda3cc)(np.art);
+}
+
+/* tick_hook: the switch's drain never came; show what's drawn. And a cover
+ * read since. */
 void np_tick(void)
 {
     uint32_t now;
 
+    art_poll();
     if (!np_lcd_hold)
         return;
     clock_us(&now);
@@ -387,11 +398,7 @@ void np_tick(void)
  * returns the pc to run instead. */
 uint32_t np_vm(uint32_t pc)
 {
-    if (np_art_dirty && !np.busy) {
-        np_art_dirty = 0;
-        if (np_art_update() && np.open && np.page == COVER)        /* the firmware's invalidate (0xda3cc, what SetVisible ends in) */
-            ((void (*)(uint32_t))0xda3cc)(np.art);
-    }
+    art_poll();
     if (!np.open || np.busy)
         return pc;
     if (pc == NP_FN_SELECT && np.page == COVER) {

@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 IPSW = ROOT / "firmware/iPod_2.2.3.ipsw"
 sys.path.insert(0, str(ROOT / "tools"))
@@ -39,7 +41,7 @@ def apm_disk(part):
     return disk + part + b"\xfa" * (2048 * 512)
 
 
-@unittest.skipUnless(IPSW.exists(), "needs firmware/iPod_2.2.3.ipsw")
+@pytest.mark.firmware("firmware/iPod_2.2.3.ipsw")
 class InstallTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -126,7 +128,7 @@ class InstallTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    sys.exit(pytest.main([__file__]))
 
 
 try:
@@ -137,7 +139,8 @@ except ImportError:
 LOADER_BIN = ROOT / "build/loader/frogger-loader.bin"
 
 
-@unittest.skipUnless(unicorn and IPSW.exists(), "needs unicorn (nix develop) and firmware/iPod_2.2.3.ipsw")
+@pytest.mark.firmware("firmware/iPod_2.2.3.ipsw")
+@pytest.mark.skipif(unicorn is None, reason="needs unicorn (nix develop)")
 class BootTest(unittest.TestCase):
     """The real loader, installed by install.py, booted in Unicorn."""
 

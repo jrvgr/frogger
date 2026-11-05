@@ -195,6 +195,14 @@ static void art_none(uint32_t why)
                     art_px(3 + x, ART_SIZE - 8 + y, 2);
 }
 
+static void copy_px(uint8_t *to, const uint8_t *from)
+{
+    unsigned i;
+
+    for (i = 0; i < NP_ART_BYTES; i++)
+        to[i] = from[i];
+}
+
 static int art_read(uint32_t offset, void *buf, uint32_t n)
 {
     uint32_t got = n;
@@ -202,9 +210,12 @@ static int art_read(uint32_t offset, void *buf, uint32_t n)
     return fw_seek(art_file, offset, 0) == 0 && fw_read(art_file, &got, buf) == 0 && got == n;
 }
 
-/* The cover for database position pos into art.px. Returns what art.px should
- * hold (art_shown's values); for an image, art.px has it, and an album's next
- * song keeps the pixels it has. */
+/* The cover for database position pos into art_buf, on the cover task.
+ * Returns what it holds (art_shown's values); for an image, art_buf has it,
+ * and an album's next song keeps the pixels it has. */
+static uint8_t art_buf[NP_ART_BYTES];
+static uint32_t buf_image = ART_FRAME;     /* the image art_buf holds; the task's own */
+
 static uint32_t art_load(uint32_t pos)
 {
     struct np_art_header h;
@@ -232,11 +243,11 @@ static uint32_t art_load(uint32_t pos)
         got = ART_FRAME + WHY_INDEX_READ;
     else if (image == NP_ART_NONE || image >= h.images)
         got = ART_FRAME + WHY_NO_COVER;
-    else if (image == art_shown
-             || art_read(np_art_images_offset(h.positions) + (uint32_t)image * NP_ART_BYTES, art.px, NP_ART_BYTES))
-        got = image;
+    else if (image == buf_image
+             || art_read(np_art_images_offset(h.positions) + (uint32_t)image * NP_ART_BYTES, art_buf, NP_ART_BYTES))
+        got = buf_image = image;
     else
-        got = ART_FRAME + WHY_IMAGE_READ;   /* art.px may be half new: the frame goes over it */
+        got = buf_image = ART_FRAME + WHY_IMAGE_READ;      /* art_buf may be half new */
     fw_close(art_file);
     return got;
 }
@@ -288,29 +299,95 @@ static volatile uint32_t art_record;
 /* play_hook, when a track starts as the song now playing (not the preload of
  * the next one). When a song ends by itself this runs on the playback side,
  * and a slow card (or a flaky CF adapter) there stalls the song change, so
- * nothing is read here: np_vm calls np_art_update from the UI's loop. */
+ * nothing is read here: np_art_update hands the read to the cover task. */
 void np_playing(uint32_t record)
 {
     art_record = record;
     np_art_dirty = 1;
 }
 
-/* np_art_dirty was set: brings art.px up to date with the song now playing,
- * on the UI's side. Returns 1 if the picture changed. */
+/* The cover read runs on a task of its own, FroggerArt (0xac6fc, the way
+ * 0x54da8 starts TrackCacheReadTask), not on the UI's loop: a read waits for
+ * the disk, behind a music-cache refill, or for 10 s and more when the drive
+ * stops answering (disk.c), and the wheel and the screens must not. The UI
+ * asks (job.want, job.record) and takes the answer (job.got, art_buf) when
+ * job.done catches up; the task starts the next read only once the UI has
+ * taken the last (job.taken), so art_buf doesn't change under the copy. */
+static volatile struct { uint32_t record, want, done, taken, got; } job;
+static int art_task;            /* 0 not started, 1 running, -1 couldn't be */
+
+#define fw_thread   ((uint32_t (*)(const char *name, void (*entry)(void), const char *args, uint32_t prio, \
+                                   uint32_t stack, uint32_t zero1, uint32_t zero2))0xac6fc)
+#define fw_sleep    ((void (*)(uint32_t zero, uint32_t ticks))0x3460)   /* 10 ms ticks (emupod) */
+#define ART_TASK_PRIO   0x40    /* TrackCacheReadTask's */
+#define ART_TASK_STACK  0x2000
+#define ART_POLL_TICKS  3       /* how soon the task sees a new song: 30 ms */
+
+static uint32_t art_job(uint32_t record)
+{
+    uint32_t pos;
+
+    if (records.broken || !position_of(record, &pos))
+        return ART_FRAME + WHY_NO_POSITION;
+    return art_load(pos);
+}
+
+static void art_task_main(void)
+{
+    uint32_t want;
+
+    for (;;) {
+        want = job.want;
+        if (want != job.done && job.taken == job.done) {
+            job.got = art_job(job.record);
+            job.done = want;
+        } else {
+            fw_sleep(0, ART_POLL_TICKS);
+        }
+    }
+}
+
+/* On the UI's side (np_vm, np_tick): hands a new song to the cover task and
+ * brings art.px up to date with what it read. Returns 1 if the picture
+ * changed. Cheap when there's nothing to do: np_vm calls it a lot. */
 int np_art_update(void)
 {
-    uint32_t pos, got = ART_FRAME + WHY_NO_POSITION;
+    uint32_t done, got;
 
-    if (!art.height) {          /* art_shown's first ART_FRAME */
-        art_header();
-        art_none(0);
+    if (np_art_dirty) {
+        np_art_dirty = 0;
+        if (!art.height) {      /* art_shown's first ART_FRAME */
+            art_header();
+            art_none(0);
+        }
+        job.record = art_record;
+        job.want++;
+        if (!art_task) {
+            uint32_t t = fw_thread("FroggerArt", art_task_main, 0, ART_TASK_PRIO, ART_TASK_STACK, 0, 0);
+            art_task = t && t < 0x80000000u ? 1 : -1;
+        }
+        if (art_task < 0 && job.taken == job.done) {    /* no task: read here, as before */
+            job.got = art_job(job.record);
+            job.done = job.want;
+        }
     }
-    if (!records.broken && position_of(art_record, &pos))
-        got = art_load(pos);
+    done = job.done;
+    if (done == job.taken)
+        return 0;
+    got = job.got;
+    if (done != job.want) {     /* a newer song is asked for already */
+        job.taken = done;
+        return 0;
+    }
+    if (got != art_shown) {
+        if (got >= ART_FRAME)
+            art_none(got - ART_FRAME);
+        else
+            copy_px(art.px, art_buf);
+    }
+    job.taken = done;
     if (got == art_shown)
         return 0;               /* the album's cover, or the same frame, is up already */
-    if (got >= ART_FRAME)
-        art_none(got - ART_FRAME);
     art_shown = got;
     return 1;
 }

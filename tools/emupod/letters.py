@@ -1,4 +1,4 @@
-"""Frogger image + letters-card.img (wheeltrace.py --card-only makes it): jump by letter
+"""Frogger image + letters-card.img (probes/wheeltrace.py --card-only makes it): jump by letter
 (payload/letters.c). In Songs (or Artists: letters.py artists), scroll slowly, then spin fast
 down and up, then waits, spins again and scrolls slowly; prints the wheel's step before and after letter_hook for each
 move, and shoots where the list lands (lt_*.png: the title shows the letter after a fast spin and

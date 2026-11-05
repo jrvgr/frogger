@@ -9,6 +9,8 @@ void playlist_begin_add(void);
 int playlist_end_add(void);
 void playlist_pick(uint32_t row);
 void playlist_cancel(void);
+void playlist_flush(void);
+void playlist_tick(void);
 void playlist_load_saved(void);
 uint32_t playlist_scratch(void);
 

@@ -6,6 +6,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE = ROOT / "build/fw/osos.img"
 sys.path.insert(0, str(ROOT / "tools/re"))
@@ -19,7 +21,7 @@ def defines(*paths):
     return out
 
 
-@unittest.skipUnless(IMAGE.exists(), "needs build/fw/osos.img")
+@pytest.mark.firmware
 class SettingsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -91,4 +93,4 @@ class SettingsTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    sys.exit(pytest.main([__file__]))

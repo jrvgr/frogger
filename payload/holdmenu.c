@@ -258,6 +258,7 @@ static struct {
     int swallow_menu;           /* ... and the click letting go of Menu is still to come */
     int show;                   /* its songs are all hidden: Hide's row is Show */
     int sleep;                  /* quick settings' Sleep: HM_PICK goes on into Apple's sleep */
+    uint32_t np_track;          /* Now Playing's popup: the song playing when it was held (last: the emupod scripts read the fields above by offset) */
 } hm = { .vis_dirty = 1 };
 
 /* Quick settings: holding Menu (fn 243, stock's backlight toggle) opens the
@@ -635,10 +636,11 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
                     hm.acting = 0;
                     return upnext_act(hm.action, TCMD_UNTAG(hm.row));
                 }
-                if (hm.np) {            /* no list: the song playing */
+                if (hm.np) {            /* no list: the song held, even if another plays now */
                     hm.acting = 0;
-                    browse_save(LIST_OTHER, 0);
-                    return act(hm.action == ACT_QUEUE ? ACT_UPNEXT : hm.action, browse_playing(), l);
+                    if (hm.action != ACT_NEXT)  /* the others put it back (hm.go); Play Album Next leaves it */
+                        browse_save(LIST_OTHER, 0);
+                    return act(hm.action == ACT_QUEUE ? ACT_UPNEXT : hm.action, hm.np_track, l);
                 }
                 if (hm.action == ACT_QUEUE)
                     queue_begin_add();
@@ -655,11 +657,13 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
             hm.np = i == POPUP_FN && np_is_open();
             hm.upnext = 0;
             if (hm.np) {
-                if (!browse_playing())
-                    return pc;
+                if (!(hm.np_track = browse_playing())) {
+                    hm.np = 0;
+                    return HM_NIL;      /* nothing playing: no popup, and not Playlists' add with no list */
+                }
                 hm.from = h;            /* the pick comes back to fn 191 itself */
                 up.n = queue_waiting(up.idx, UPNEXT_MAX);
-                hm.show = hide_track(browse_playing());
+                hm.show = hide_track(hm.np_track);
                 return open_popup(l, up.n ? ROWS_NP_UPNEXT : ROWS_NP);
             }
             if (i == PLAYLISTS && *l == TCMD_INT(0))

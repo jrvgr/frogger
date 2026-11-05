@@ -5,8 +5,8 @@
 ## Tested
 
 - [ ] `make -C loader` builds
-- [ ] `python3 -m unittest discover -s tests`
-- [ ] `python3 tools/emupod/runtests.py` (needs the firmware; CI runs it too)
+- [ ] `pytest`
+- [ ] `pytest -n auto -m emupod` (needs the firmware; CI runs it too)
 - [ ] New or changed feature: an emulator check for it (`tools/emupod/`, listed in `runtests.py`)
 - [ ] On a real 3G (say which storage), or labelled `needs device test`
 

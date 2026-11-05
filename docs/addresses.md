@@ -83,6 +83,8 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 | `0xb8eb4` | `0xe92d4038` `push {r3, r4, r5, lr}` | `skip_pick_hook` | B | `0xb8eb8` | First instruction of `0xb8eb4(player, item)`, a pick's load: the song before it (playing, or noted by `keep_hook`) counts as skipped; `lr` passed, `0xd9268`'s ignored | `skips.c` | confirmed (emupod) | [Skips][skips] |
 | `0x118df0` | `0xeb000012` `bl 0x118e40` | `battery_read` (C) | BL | | `0x118de0`, a battery reading: calls `0x118e40(&raw)` itself and notes raw | `battery.c` | confirmed (emupod, read stubbed) | [The battery icon][bat] |
 | `0x8e788` | `0xebfed0d9` `bl 0x42af4` | `battery_state` (C) | BL | | `0x8e760`, the bar's update: calls `0x42af4(bar)` itself; a level state becomes child 4 or 5 (the percentage) | `battery.c` | confirmed (emupod) | [The battery icon][bat] |
+| `0xc347c` | `0xe92d407c` `push {r2-r6, lr}` | `disk_reinit_hook` | B | `0xc3480` | First instruction of the drive re-init `0xc347c(ata, unit)`, run before the next command while `ata+0x1e0` is set: a drive still BSY/DRQ gets a soft reset (SRST) and up to 5 s to come back first | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0xc788c` | `0xe92d47fc` `push {r2-r10, lr}` | `disk_read_hook` | B | (calls `0xc7890`) | First instruction of the ATA read `0xc788c(ata, unit, lba, buf, count)`: runs it again, up to 3 tries in all, while it fails with `ata+0x1e0` set | `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
 
 Other patches, in `loader/patches.c` (bytes, not hooks):
 
@@ -158,6 +160,10 @@ Called from C through a cast `#define` (or from `hooks.S`). Signatures are as Fr
 | `0x42af4` | `battery_state(bar)` | The battery's state: 0-2 charging, 3 charged, 4 + level, 20 low, 21 none | `battery.c` | confirmed (emupod) | [The battery icon][bat] |
 | `0x118e40` | `battery_raw(&raw)` | One raw battery reading (0 when it read one; by hardware revision) | `battery.c` | confirmed (emupod: fails there) | [The battery icon][bat] |
 | widget `[+0x90]` `vtable+0x11c` | `current_row(cursor)` | The list's current row | `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
+| `0x14b0b8` | `udelay(us)` | Busy-waits on the µs timer `0xcf001110` | `disk.c` | confirmed | [The disk that stops answering][disk] |
+| `0x13fa14` | `wait_ready(ata, us)` | Waits for BSY clear, sleeping 1 ms a step; 0 clear, 1 timed out | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0xac6fc` | `thread(name, entry, args, prio, stack, 0, 0)` | Starts a task (`args` a command line, 0 for none); Frogger's cover task FroggerArt is started the way `0x54da8` starts TrackCacheReadTask (`prio` `0x40`, stack `0x2000`). The entry never returns | `art.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x3460` | `sleep(0, ticks)` | Sleeps the calling task (kernel call 20 through `0x2eda8`); a tick is 10 ms in emupod (`sleep(0, 20)`: 24 calls in 5 s), so `0x13fa14`'s step is likely 10 ms, not 1 | `art.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 
 Vtables are relative: a slot holds an offset from the vtable, so the function is `vt + [vt + slot]`.
 
@@ -191,6 +197,13 @@ Not called, but where the hooks sit or what they stand in for.
 | `0xacfac` | Marks prefs dirty | `settings.c` | confirmed (emupod) | [Frogger's settings][fset] |
 | `0x90fe4`, `0x90d50` → `0x4295c` | Wheel handler; its step accelerator | `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
 | `0x88ee4` | UI dispatcher (calls `0xe9664`) | `hooks.S`, `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
+| `0x913d0` | ATA error reset: pulses `0xcf005034` bit 2 (the PP5002's IDE controller, not the drive), redoes the timings (`0xdda40`), sets `ata+0x1e0` | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x1302a0` | ATA state handler for event 5 (timeout/error): `+0x18c = 0xff`, error `0x400` into `+0x190`, `0x913d0`, then event 0 (done) | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x11ac00` | `post(table, ata, event)`: the ATA state machine's next step, `ata+0x174 = table + 4 + 8 * event` | | confirmed | [The disk that stops answering][disk] |
+| `0x12ff68`, `0x1300bc`, `0x1301fc` | ATA state handlers that check the timeout (`0xe7290`) and post event 5 | | confirmed | [The disk that stops answering][disk] |
+| `0xc7720` | Block-device read (ATA vtable `+0xc`), calls `0xc788c` | `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0xe9c4c` | TrackCacheReadTask: on a read error it goes back to waiting (`0xe9c6c`) and the refill is lost | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x54da8` | Where TrackCacheReadTask is started (`0xac6fc`, name at `0x1c0a68`): the pattern FroggerArt follows | `art.c` | confirmed | [The disk that stops answering][disk] |
 
 ## RAM objects and globals
 
@@ -204,6 +217,7 @@ Not called, but where the hooks sit or what they stand in for.
 | `[lib+0x3c]` = `0x93c20` | The "started playing" callback (posts `0x3300001d`) | `queue.c` | confirmed (emupod) | [How songs start playing][play] |
 | `0x41e938` | The bytecode's `0x08de` object (screens, element text) | `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
 | `0x420a34` | Copy of the prefs flags word | `settings.c` | confirmed (emupod) | [Native side of a setting][native] |
+| `Device/Preferences` file offset `0xafc` | The saved prefs flags word: the file is the prefs struct from `prefs+8` (offset = struct offset − 8) | Crate | confirmed (device) | [Frogger's settings on the disk][fdisk] |
 | ui `+0x1c` | The library object (`lib`) | `queue.c`, `playlist.c`, `letters.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | `[lib]` | Root object = prefs: `+4` the player, `+0x20` shuffle byte, `+0xb04` prefs flags word (Apple: bits 0, 1; Frogger: 16 Show Hidden, 17 Jump by Letter off, 18 Resume Mixes off, 19–23 a feature switch off (`FEATURE_*`), 24–26 the backlight timer's last value other than Off and Always On), `+0xbc4` the app object (`0x08ea`), `+0xb41` Play Counts needs writing, `+0xb42` On-The-Go needs saving | `queue.c`, `playlist.c`, `settings.c`, `letters.c`, `resume.c` | confirmed (emupod) | [Frogger's settings][fset], [Playlists made on the iPod][otgfiles] |
 | `lib+0x3c` | Callback run when a list starts playing | `queue.c` | likely | `payload/queue.c` |
@@ -222,6 +236,9 @@ Not called, but where the hooks sit or what they stand in for.
 | track record `+0x28`, mhit `+0x98` | Artist (album artist when there is one); Frogger's `"HIDE"` flag | `artist.c`, `hide.h` | confirmed (emupod) | [iTunesDB][itdb], [Album artists][aa] |
 | `0x36ffc0` | Apple's 15 battery thresholds (u16, rising, raw units): level = how many are ≤ raw | `battery.c` | confirmed (emupod) | [The battery icon][bat] |
 | `0x370d64` | The battery level 0..15 (16 none yet), moved a step per reading | | confirmed (emupod) | [The battery icon][bat] |
+| `0x1fd44dc` (heap, stock; differs with Frogger) `ata+0x10c`, `+0x114`/`+0x118`, `+0x1a4`, `+0x1e0` | The ATA object: pointers to the status, device-control and alt-status registers; the running command's timeout; re-init pending (set by `0x913d0`, cleared at `0xc3560`) | `disk.c`, `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0xc00033f8` | ATA device control (write: bit 1 nIEN, bit 2 SRST) / alternate status (read) | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
+| `0x1ed44dc` (heap, with Frogger in emupod) | The ATA object as `disk_read_hook` sees it (r0 of `0xc788c`); `disk.c` keeps the pointer from the first read rather than a fixed address | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 
 ## UI bytecode
 
@@ -375,8 +392,10 @@ The other hex constants in `payload/`, `loader/` and `tools/mkpayload.py`: instr
 [vm]: tcmd.md#the-vm-confirmed-unless-marked
 [native]: tcmd.md#the-native-side-of-a-setting-confirmed-in-emupod-clicker
 [fset]: tcmd.md#froggers-settings-working-in-emupod-not-yet-on-a-device
+[fdisk]: tcmd.md#on-the-disk-ipod_controldevicepreferences-confirmed-on-a-device
 [hm]: tcmd.md#the-hold-menu-working-in-emupod-payloadholdmenuc
 [npview]: nowplaying.md#the-screen-view-0x25ee-confirmed-from-the-resource-roles-likely
 [nppages]: nowplaying.md#how-the-pages-work-confirmed-in-emupod-payloadnowplayingc
 [npscreen]: nowplaying.md#how-the-screen-is-put-together-runtime
 [covers]: nowplaying.md#covers-confirmed-in-emupod-and-on-crates-output
+[disk]: power-and-emupod.md#part-c-the-disk-that-stops-answering-confirmed-in-emupod

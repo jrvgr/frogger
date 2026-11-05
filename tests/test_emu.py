@@ -4,6 +4,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE = ROOT / "build/fw/osos.img"
 sys.path.insert(0, str(ROOT / "tools/emu"))
@@ -14,7 +16,8 @@ except ImportError:
     unicorn = None
 
 
-@unittest.skipUnless(unicorn and IMAGE.exists(), "needs unicorn (nix develop) and build/fw/osos.img")
+@pytest.mark.firmware
+@pytest.mark.skipif(unicorn is None, reason="needs unicorn (nix develop)")
 class LcdHarnessTest(unittest.TestCase):
     def run_lcd(self, *args):
         import lcd
@@ -28,7 +31,8 @@ class LcdHarnessTest(unittest.TestCase):
         self.assertEqual(self.run_lcd("--expect-invert"), 1)
 
 
-@unittest.skipUnless(unicorn and IMAGE.exists(), "needs unicorn (nix develop) and build/fw/osos.img")
+@pytest.mark.firmware
+@pytest.mark.skipif(unicorn is None, reason="needs unicorn (nix develop)")
 class ItunesDbLoaderTest(unittest.TestCase):
     def test_invisible_tracks_are_dropped(self):
         import itunesdb
@@ -42,4 +46,4 @@ class ItunesDbLoaderTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    sys.exit(pytest.main([__file__]))

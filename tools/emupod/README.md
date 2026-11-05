@@ -15,7 +15,8 @@ place:
     python3 tools/fwtool.py extract firmware/iPod_2.2.3.ipsw -o build/fw
     make -C loader
     python3 tools/emupod/mkcards.py          # test cards, in build/emupod-work
-    python3 tools/emupod/runtests.py         # all the checks below; CI runs this
+    pytest -n auto -m emupod                 # all the checks below (tests/test_emupod.py); CI runs this
+    python3 tools/emupod/runtests.py -j 4    # the same without pytest
 
 To run one script, run `mkimage.py` after building the loader, then `python3 SCRIPT.py` from
 this folder.
@@ -39,24 +40,23 @@ this folder.
 | Battery percentage | `battery.py` |
 | Nothing writes Apple's image (read-only on a device) | `readonly.py` |
 | The payload's memory stays free of Apple's heap | `heaptop.py` |
+| The disk coming back after it stops answering (SRST, re-init, retry) | `diskhang.py` |
 
 Shown in screenshots only, not checked yet: covers changing on Next (`artplay.py`), Jump by Letter
 (`letters.py`), album artists (`albumartist.py`), Add to Playlist (`playlists.py`), the Now Playing
-cycle (`npcycle.py`).
+cycle (`npcycle.py`), the hold menu and queue step by step (`holdmenu.py`).
 
 ## Other scripts
 
 - `ipod3g.py`: `Pod()`, the driver: boot, `press()`, `scroll()`, `wheel()`, `settle()`, `shot()`.
+  `itdb.py`: iTunesDB records, for scripts that write their own database.
 - Cards: `mkcards.py`, `hmcard.py`, `mkart.py`, `mkresume.py`; `mkimage.py` makes the Frogger
   RAM image emupod boots; `checkart.py` reads a FroggerArt and draws it.
-- Reverse engineering, kept for how things were found (`docs/re-notes.md`, `docs/tcmd.md`):
-  `settrace.py`, `vmtrace.py`, `optable.py`, `lists.py`, `ramdiff.py`, `whowrites.py`,
-  `whoreads.py`, `sethandler.py`, `whenfn.py`, `strlookup.py`, `nplookups.py`, `npbmaps.py`,
-  `npselect.py`, `hm2trace.py`, `hot.py`, `playhang.py`, `maskedwhen.py`, `maskedpath.py`,
-  `idleloop.py`, `nobar.py`, `otgqueue.py`, `frogset.py`, `frogshow.py`, `persist.py`,
-  `artdemo.py`, `playshot.py`.
+- `probes/`: one-off reverse-engineering traces, kept for how things were found
+  (`docs/re-notes.md`, `docs/tcmd.md`). They check nothing. Run them from this folder too, e.g.
+  `python3 probes/settrace.py 8`.
 
-`lists.py` and `hot.py` need the function prologues:
+`probes/lists.py`, `probes/hot.py` and the other `*trace.py` probes need the function prologues:
 
     grep -E "^ *[0-9a-f]+:	[0-9a-f]{8} 	push	\{[^}]*lr\}" build/osos.dis | awk -F: '{print $1}' \
         | tr -d ' ' > build/emupod-work/prologues.txt

@@ -10,7 +10,7 @@ carrying Frogger's hide flag:
 3. Then Select on the playing song (from the queue) opens Now Playing: Menu is back in Songs.
 
 Prints each step's title and exits 1 on the first wrong one; screenshots hr_*.png."""
-import contextlib, importlib.util, io, shutil, struct, subprocess, sys
+import shutil, struct, subprocess, sys
 from pathlib import Path
 from ipod3g import Pod, W
 

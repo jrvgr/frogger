@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include "playlist.h"
+#include "disk.h"
 
 #define UI_OBJECT       (*(volatile uint32_t *)0x43580c)
 #define LIB_OTG         (0x48 / 4)
@@ -65,6 +66,7 @@ static struct {
     uint32_t loading;           /* playlist_load_saved's own (the scratch may be in use) */
     uint32_t otg;               /* On-The-Go, while something stands in for it */
     int loaded;                 /* the FroggerPlaylist files have been read */
+    uint32_t save_list, save_index;     /* a save waiting for the disk (playlist_flush) */
 } pl;
 
 static uint32_t word(uint32_t addr, unsigned i)
@@ -215,12 +217,40 @@ void playlist_pick(uint32_t row)
         copy_list(lib, pl.scratch, list_key(lib), 0, target);
         if (target == word(lib, LIB_OTG))
             ((volatile uint8_t *)word(lib, 0))[PREFS_OTG_DIRTY] = 1;
-        else if (word(target, LIST_SAVED_N))
-            save_to(lib, target, numbered_path("OTGPlaylistInfo_", word(target, LIST_SAVED_N), 1));
-        else
-            save_to(lib, target, numbered_path("FroggerPlaylist_", i, 1));
+        else {
+            if (pl.save_list && pl.save_list != target)
+                playlist_flush();       /* another one still waiting: that first */
+            pl.save_list = target;
+            pl.save_index = i;
+            if (disk_idle(DISK_IDLE_US))
+                playlist_flush();
+        }
     }
     playlist_cancel();
+}
+
+/* The playlist playlist_pick changed, saved: at once when the disk is free,
+ * else from tick_hook once it is (a refill running, or a drive that stopped
+ * answering, disk.c), so the UI neither waits on the disk nor writes over a
+ * song change (skips.c). */
+void playlist_flush(void)
+{
+    uint32_t lib = library(), target = pl.save_list;
+
+    if (!target || !lib || pl.otg)
+        return;                 /* (pl.otg: an add is standing in for On-The-Go) */
+    pl.save_list = 0;
+    if (word(target, LIST_SAVED_N))
+        save_to(lib, target, numbered_path("OTGPlaylistInfo_", word(target, LIST_SAVED_N), 1));
+    else
+        save_to(lib, target, numbered_path("FroggerPlaylist_", pl.save_index, 1));
+}
+
+/* tick_hook, on the UI thread. */
+void playlist_tick(void)
+{
+    if (pl.save_list && disk_idle(DISK_IDLE_US))
+        playlist_flush();
 }
 
 /* The pick is done or cancelled: empties the scratch list. */

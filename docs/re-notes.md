@@ -336,7 +336,7 @@ is the problem: it doesn't build those lists.
   lists came from this loop, they would have vanished.
 
 So Music › Songs and Artists are built by other code. **Found in emupod** (counting
-every function entry while each Music list opens, `build/emupod-work/scripts/lists.py`):
+every function entry while each Music list opens, `tools/emupod/probes/lists.py`):
 
 - The library object keeps one lazily built index per list: `+0x884` Artists
   (`0x7c1a8`), `+0x894` Albums (`0x7c178`), `+0x898`/`+0x89c` Songs and its count
@@ -479,7 +479,7 @@ The bytecode, the VM and how a Settings item is wired are in **`docs/tcmd.md`**
 ## On-The-Go and the play queue (**confirmed** in emupod)
 
 Found with function-entry counts and VM traces while holding Select, playing, pressing Next and
-clearing (`tools/emupod/otgqueue.py` runs Frogger's version of each). Objects, as `lib` = the
+clearing (`tools/emupod/probes/otgqueue.py` runs Frogger's version of each). Objects, as `lib` = the
 library (`[[0x43580c]+0x1c]`, the way `0x6a15c` reaches it; `0x43580c` holds the menu object
 the bytecode calls `0x08df`):
 
@@ -601,7 +601,7 @@ on a change of what plays), and a device test.
 
 ## Playlists made on the iPod (**confirmed** in emupod)
 
-`tools/emupod/savetrace.py` and `playlists.py` (both write back into a card copy and then boot it
+`tools/emupod/probes/savetrace.py` and `playlists.py` (both write back into a card copy and then boot it
 again).
 
 - **Save Playlist** (`0x08eb.f3` → `0xd292c`) takes the highest N of the playlists (`+0x124`,
@@ -645,7 +645,7 @@ again).
 
 ## The wheel and the lists (**confirmed** in emupod)
 
-`tools/emupod/wheeltrace.py` (60-song `letters-card.img`; a trace of three clicks) and
+`tools/emupod/probes/wheeltrace.py` (60-song `letters-card.img`; a trace of three clicks) and
 `letters.py`.
 
 - **Scrolling is native.** The UI thread hands each wheel event to the list widget's
@@ -673,7 +673,7 @@ again).
 
 ## Browsing the Music lists (**confirmed** in emupod)
 
-`tools/emupod/hm2trace.py` (one run: Albums › an album, Artists › an artist › an album, back out,
+`tools/emupod/probes/hm2trace.py` (one run: Albums › an album, Artists › an artist › an album, back out,
 Songs, Now Playing; bytecode, native methods and the browse state per step) and `holdmenu2.py`.
 
 - **One query on the library.** `lib+0x40` the playlist browsed (0 the library; `0xd6760(lib, i)`
