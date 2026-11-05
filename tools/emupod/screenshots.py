@@ -250,6 +250,7 @@ class Demo:
         self.p.run(9_000_000)
         self.press("select")                                # Language: English, the main menu
         self.shots = {}
+        self.anims = {}
 
     def press(self, key, hold_us=150_000):
         self.p.press(key, hold_us=hold_us, after_us=1_500_000)
@@ -269,6 +270,22 @@ class Demo:
         for n in rows:
             self.scroll(n)
             self.press("select")
+
+    def film(self, name, back=False):
+        """Press Select and keep every distinct screen of the slide (10 ms steps) as `name`'s frames."""
+        frames = self.anims.setdefault(name, [])
+        if not back:
+            frames.append((self.p.settle(), 1500))
+        self.p.press("select", after_us=0)
+        last = frames[-1][0]
+        for _ in range(60):
+            self.p.e.run_for(10_000)
+            sc = self.p.screen()
+            if sc != last:
+                frames.append((sc, 40))
+                last = sc
+        self.p.run(500_000)
+        frames.append((self.p.settle(), 1500))
 
     def shot(self, name):
         self.p.run(500_000)
@@ -291,9 +308,19 @@ def scene_nowplaying(d):
     d.press("select")                                       # done: back on the cover page
     d.p.run(2_000_000)
     d.shot("cover-page")
-    d.press("select")
-    d.p.run(1_000_000)
-    d.shot("apple-page")
+    d.film("page-slide")                                    # Select: the slide to Apple's page
+    d.film("page-slide", back=True)                         # and back to the cover page
+
+
+def _gif(frames):
+    """Rendered PNGs → a looping GIF: each end page held, the slide frames quick."""
+    import io
+    from PIL import Image
+    ims = [Image.open(io.BytesIO(render(f))).convert("RGB").quantize(8, dither=Image.Dither.NONE) for f, _ in frames]
+    out = io.BytesIO()
+    ims[0].save(out, "GIF", save_all=True, append_images=ims[1:], duration=[ms for _, ms in frames],
+                loop=0, optimize=False)
+    return out.getvalue()
 
 
 def scene_holdmenu(d):
@@ -372,6 +399,9 @@ def run_scene(name, raw=False):
     d = Demo()
     SCENES[name](d)
     from emupod.recording import png
+    for anim, frames in d.anims.items():
+        (OUT / f"{anim}.gif").write_bytes(_gif(frames))
+        print("wrote", OUT / f"{anim}.gif")
     for shot, levels in d.shots.items():
         (OUT / f"{shot}.png").write_bytes(render(levels))
         if raw:

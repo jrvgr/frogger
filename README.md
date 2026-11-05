@@ -18,7 +18,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/cover-page.png" width="180" alt="Cover page"><br><sub>Cover page</sub></td>
-    <td align="center"><img src="docs/screenshots/apple-page.png" width="180" alt="Page slide"><br><sub>Page slide</sub></td>
+    <td align="center"><img src="docs/screenshots/page-slide.gif" width="180" alt="Page slide"><br><sub>Page slide</sub></td>
     <td align="center"><img src="docs/screenshots/hold-song.png" width="180" alt="Hold menu"><br><sub>Hold menu</sub></td>
     <td align="center"><img src="docs/screenshots/hold-nowplaying.png" width="180" alt="On Now Playing"><br><sub>On Now Playing</sub></td>
   </tr>
