@@ -24,7 +24,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/main-queue.png" width="180" alt="Queue on the main menu"><br><sub>Queue on the main menu</sub></td>
-    <td align="center"><img src="docs/screenshots/hide.gif" width="180" alt="Hide takes an album out"><br><sub>Hide takes an album out</sub></td>
+    <td align="center"><img src="docs/screenshots/hide.gif" width="180" alt="Hide an album"><br><sub>Hide an album</sub></td>
     <td align="center"><img src="docs/screenshots/jump-letter.png" width="180" alt="Jump by letter"><br><sub>Jump by letter</sub></td>
     <td align="center"><img src="docs/screenshots/album-artists.png" width="180" alt="Album artists"><br><sub>Album artists</sub></td>
   </tr>
@@ -37,6 +37,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
 
 - **Cover page.** Now Playing opens on the title, a 72×72 cover and the progress bar. Select slides to Apple's page and back.
 - **Hold menu.** Hold Select on a song, album, artist, playlist or Now Playing: Add to Queue, Play Album Next, Add to Playlist, Go to Album/Artist, Hide.
+- **Add to Playlist.** Add songs, albums or artists to any playlist on the iPod, synced ones included, or to a new one. They're kept on the iPod and survive a restart.
 - **Queue.** Queued songs play next, then playback goes back to where it was. Play, remove or clear from Now Playing or the main menu.
 - **Hidden songs.** Out of Artists, Albums, Genres and Composers, still in Songs and playlists. Settings › Show Hidden lists them.
 - **Quick settings.** Hold Menu anywhere: Backlight, Shuffle, Repeat, Sleep.
