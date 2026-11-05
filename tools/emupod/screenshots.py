@@ -287,6 +287,11 @@ class Demo:
         self.p.run(500_000)
         frames.append((self.p.settle(), 1500))
 
+    def key(self, name, ms=1500):
+        """The settled screen as the next frame of `name`'s GIF, shown for ms."""
+        self.p.run(500_000)
+        self.anims.setdefault(name, []).append((self.p.settle(), ms))
+
     def shot(self, name):
         self.p.run(500_000)
         self.shots[name] = self.p.settle()
@@ -326,8 +331,9 @@ def _gif(frames):
 def scene_holdmenu(d):
     d.open(0, 3)                                            # Music > Songs
     d.scroll(d.song("Juniper"))
+    d.key("hold-song", 1200)                                # the song highlighted
     d.hold()
-    d.shot("hold-song")
+    d.key("hold-song", 2500)                                # held: the menu for it
 
 
 def queue(d, titles):
@@ -350,10 +356,11 @@ def scene_queue(d):
     d.press("menu"); d.press("menu")                        # the main menu
     d.shot("main-queue")
     d.open(10)                                              # Now Playing, the last row
+    d.key("up-next", 1200)
     d.hold()
-    d.shot("hold-nowplaying")
-    d.press("select")                                       # Up Next
-    d.shot("up-next")
+    d.key("up-next", 1500)                                  # held: Queue, as songs wait
+    d.press("select")                                       # the songs waiting
+    d.key("up-next", 2500)
 
 
 def scene_quick(d):
@@ -381,9 +388,12 @@ def scene_albumartist(d):
 def scene_hidden(d):
     d.open(0, 2)                                            # Music > Albums
     d.scroll(4)
+    d.key("hide", 1200)                                     # an album
     d.hold()
     d.scroll(5)
-    d.shot("hide")
+    d.key("hide", 1200)                                     # Hide
+    d.press("select")
+    d.key("hide", 2500)                                     # gone from Albums
 
 
 def scene_settings(d):

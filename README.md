@@ -18,21 +18,20 @@ Work in progress. Some features need a syncing app that knows about them: that's
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/cover-page.png" width="180" alt="Cover page"><br><sub>Cover page</sub></td>
-    <td align="center"><img src="docs/screenshots/page-slide.gif" width="180" alt="Page slide"><br><sub>Page slide</sub></td>
-    <td align="center"><img src="docs/screenshots/hold-song.png" width="180" alt="Hold menu"><br><sub>Hold menu</sub></td>
-    <td align="center"><img src="docs/screenshots/hold-nowplaying.png" width="180" alt="On Now Playing"><br><sub>On Now Playing</sub></td>
+    <td align="center"><img src="docs/screenshots/page-slide.gif" width="180" alt="Select slides to Apple's page"><br><sub>Select slides to Apple's page</sub></td>
+    <td align="center"><img src="docs/screenshots/hold-song.gif" width="180" alt="Hold Select: the hold menu"><br><sub>Hold Select: the hold menu</sub></td>
+    <td align="center"><img src="docs/screenshots/up-next.gif" width="180" alt="Hold on Now Playing: the queue"><br><sub>Hold on Now Playing: the queue</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/up-next.png" width="180" alt="Queue"><br><sub>Queue</sub></td>
-    <td align="center"><img src="docs/screenshots/main-queue.png" width="180" alt="Queue on the menu"><br><sub>Queue on the menu</sub></td>
+    <td align="center"><img src="docs/screenshots/main-queue.png" width="180" alt="Queue on the main menu"><br><sub>Queue on the main menu</sub></td>
+    <td align="center"><img src="docs/screenshots/hide.gif" width="180" alt="Hide takes an album out"><br><sub>Hide takes an album out</sub></td>
     <td align="center"><img src="docs/screenshots/jump-letter.png" width="180" alt="Jump by letter"><br><sub>Jump by letter</sub></td>
     <td align="center"><img src="docs/screenshots/album-artists.png" width="180" alt="Album artists"><br><sub>Album artists</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/hide.png" width="180" alt="Hidden songs"><br><sub>Hidden songs</sub></td>
-    <td align="center"><img src="docs/screenshots/quick-settings.png" width="180" alt="Quick settings"><br><sub>Quick settings</sub></td>
-    <td align="center"><img src="docs/screenshots/battery.png" width="180" alt="Battery percent"><br><sub>Battery percent</sub></td>
-    <td align="center"><img src="docs/screenshots/settings.png" width="180" alt="Switches"><br><sub>Switches</sub></td>
+    <td align="center"><img src="docs/screenshots/quick-settings.png" width="180" alt="Hold Menu: quick settings"><br><sub>Hold Menu: quick settings</sub></td>
+    <td align="center"><img src="docs/screenshots/battery.png" width="180" alt="Battery percentage"><br><sub>Battery percentage</sub></td>
+    <td align="center"><img src="docs/screenshots/settings.png" width="180" alt="Settings: a switch per feature"><br><sub>Settings: a switch per feature</sub></td>
   </tr>
 </table>
 
