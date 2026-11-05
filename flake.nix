@@ -13,8 +13,9 @@
           tools = with pkgs; [
             gcc-arm-embedded   # arm-none-eabi-{gcc,as,ld,objdump,objcopy} for the PP5002's ARM7TDMI cores
             gnumake            # loader/Makefile
-            # patch/unpack scripts; unicorn runs osos functions in tools/emu; pytest (-n with xdist) runs tests/
-            (python3.withPackages (ps: [ ps.unicorn ps.pillow ps.pytest ps.pytest-xdist ]))
+            # patch/unpack scripts; unicorn runs osos functions in tools/emu; pytest (-n with xdist,
+            # --cov with pytest-cov) runs tests/
+            (python3.withPackages (ps: [ ps.unicorn ps.pillow ps.pytest ps.pytest-xdist ps.pytest-cov ]))
             unzip              # .ipsw files are zip archives
             unixtools.xxd      # hex dumps and diffs
             radare2            # disassembly / binary patching

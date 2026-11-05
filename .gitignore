@@ -6,4 +6,6 @@ backups/
 result
 build/
 __pycache__/
+.coverage
+.coverage.*
 .DS_Store
