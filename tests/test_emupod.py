@@ -1,4 +1,4 @@
-"""The emupod checks (tools/emupod/runtests.py's CHECKS), one test each: the script runs as
+"""The emupod checks (tools/emupod/runtests.py's FEATURES), one test each: the script runs as
 runtests.py runs it, on a Frogger image of the loader just built, and its output (also in
 build/emupod-work/logs/NAME.log) shows when it fails. Slow: run them with -n.
 

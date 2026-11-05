@@ -49,9 +49,12 @@ jobs:
     needs: tag
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/ci.yml
-    permissions:        # a called workflow can't ask for more than this grants (ci.yml's changes job reads PRs)
+    # A called workflow can't ask for more than this grants: ci.yml's changes job reads PRs, its
+    # report job writes the Test results check and the coverage comment.
+    permissions:
       contents: read
-      pull-requests: read
+      checks: write
+      pull-requests: write
 
   release:
     name: Publish the loader

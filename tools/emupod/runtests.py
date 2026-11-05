@@ -2,7 +2,7 @@
 """Run the emupod scripts that check Frogger (each exits 1 on a wrong step), a few at a time, on a
 Frogger image of the loader just built. Needs tools/emupod/setup.sh and mkcards.py done, and
 build/fw/osos.img (tools/fwtool.py extract). Logs go to build/emupod-work/logs/. pytest runs the same
-checks (tests/test_emupod.py: `pytest -n auto -m emupod`); a new check goes in CHECKS for both.
+checks (tests/test_emupod.py: `pytest -n auto -m emupod`); a new check goes in FEATURES for both.
 
     tools/emupod/runtests.py [-j 4] [SCRIPT...]    # default: all of CHECKS
 """
@@ -13,9 +13,37 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 LOGS = ROOT / "build/emupod-work/logs"
-CHECKS = ["holdmenu2", "upnext", "unhide", "quicksettings", "queuerow", "holdrow", "npfirst", "npslide",
-          "npscrub", "resume", "readonly", "skips", "heaptop", "battery", "switches", "diskhang",
-          "lockcover", "flash"]
+# Each check: what it covers and the payload files it goes through. CI's summary shows them, and
+# the payload files no check goes through (tools/emupod/README.md has the same table).
+FEATURES = {
+    "holdmenu2": ("Hold menu: Go to Album/Artist, Play Album Next, Hide", ["holdmenu.c", "browse.c", "hide.c"]),
+    "upnext": ("Up Next: open, remove, play from, clear", ["queue.c", "holdmenu.c", "browse.c"]),
+    "unhide": ("Show (un-hide), Settings › Show Hidden, FroggerHidden", ["hide.c", "settings.c"]),
+    "quicksettings": ("Quick settings (hold Menu), its Sleep", ["holdmenu.c"]),
+    "queuerow": ("The main menu's Queue row", ["queue.c"]),
+    "holdrow": ("Add to Queue on any row, hidden songs above it", ["holdmenu.c", "queue.c", "hide.c"]),
+    "npfirst": ("Hold menu on Now Playing as the first hold", ["holdmenu.c", "nowplaying.c"]),
+    "npslide": ("Now Playing: the page slide", ["nowplaying.c"]),
+    "npscrub": ("Now Playing: back to the cover page after a scrub", ["nowplaying.c"]),
+    "resume": ("Resume Mixes", ["resume.c"]),
+    "readonly": ("Nothing writes Apple's image (read-only on a device)", ["queue.c", "playlist.c"]),
+    "skips": ("Skip counts, FroggerSkips", ["skips.c"]),
+    "heaptop": ("The payload's memory stays free of Apple's heap", []),
+    "battery": ("Battery percentage", ["battery.c"]),
+    "switches": ("Settings' feature switches, each off", ["settings.c"]),
+    "diskhang": ("The disk coming back after it stops answering (SRST, re-init, retry)", ["disk.c"]),
+    "lockcover": ("Lock Cover: Hold on, Hold off, the switch off", ["lock.c"]),
+    "flash": ("Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto", ["flash.c"]),
+}
+CHECKS = list(FEATURES)
+# Features no check covers yet: the script that shows them, in screenshots only.
+UNCHECKED = {
+    "Covers changing on Next": "artplay.py",
+    "Jump by Letter": "letters.py",
+    "Album artists": "albumartist.py",
+    "Add to Playlist into a playlist of your own": "playlists.py",
+    "The Now Playing cycle": "npcycle.py",
+}
 
 
 def run(name):
