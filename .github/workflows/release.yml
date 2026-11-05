@@ -30,7 +30,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check and push the tag
         env:
           VERSION: ${{ inputs.version }}
@@ -60,8 +60,8 @@ jobs:
     env:
       TAG: ${{ inputs.version || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v30
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-build-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
