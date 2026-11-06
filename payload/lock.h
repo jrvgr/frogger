@@ -4,11 +4,11 @@
 /* Lock Cover (lock.c): with Hold on and a song playing or paused, the screen
  * shows the cover large, the title and the progress bar. */
 
-#define LOCK_ART        108         /* the 72x72 cover at 1.5x, nearest neighbour */
-#define LOCK_ART_TOP    2
+#define LOCK_ART        72          /* the 72x72 cover, pixel for pixel: scaled up, text in it was unreadable */
+#define LOCK_ART_TOP    16          /* cover, title and bar centred in the 128 rows */
 #define LOCK_ART_LEFT   ((160 - LOCK_ART) / 2)
-#define LOCK_TITLE_TOP  113         /* a 5x7 line (8 rows with descenders) */
-#define LOCK_BAR_TOP    123         /* the progress bar: 3 rows, as wide as the cover */
+#define LOCK_TITLE_TOP  96          /* a 5x7 line (8 rows with descenders) */
+#define LOCK_BAR_TOP    109         /* the progress bar: 3 rows, as wide as the cover */
 #define LOCK_BAR_ROWS   3
 
 #ifndef __ASSEMBLER__
