@@ -6,6 +6,9 @@ addopts = ["-ra"]  # list every skip and its reason at the end
 markers = [
     "firmware(path): needs a file made from Apple's firmware (default build/fw/osos.img); skips without it",
     "emupod: an emulator check from tools/emupod (nix develop .#emu, setup.sh, mkcards.py); -m 'not emupod' leaves them out",
+    "perf: the speed budget, instructions per UI action against stock (tools/emupod/perf.py)",
+    "uidisk: no disk I/O on the UI thread (tools/emupod/uidisk.py)",
+    "stall: the UI answers while the disk is hung (tools/emupod/stall.py)",
 ]
 junit_family = "xunit1"  # --junitxml writes each test's file and line, for CI's annotations
 

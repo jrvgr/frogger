@@ -8,6 +8,8 @@
     art-card.img       hide-card.img with a FroggerArt of test pictures (mkart.py)
     resume-card.img    music-card.img plus a 25-minute "Long Mix" (mkresume.py), and resume-bm-card.img with
                        its bookmark at 2:00
+    lib-generated-card.img  a big made-up library: 5,000 songs, covers (library.py; the perf, uidisk
+                       and stall checks)
 
 Most scripts copy one of these and write their own iTunesDB (hmcard.py). The tones' sizes are the ones
 the scripts' iTunesDBs give (lame with an ID3v1 tag), so every card agrees. Needs mkfs.fat, mtools, sox
@@ -93,6 +95,7 @@ def main():
     run(sys.executable, here / "mkart.py")
     run(sys.executable, here / "mkresume.py")
     run(sys.executable, here / "mkresume.py", "--bookmark", "120000", "--out", W / "resume-bm-card.img")
+    run(sys.executable, here / "library.py", "generated")
 
 
 if __name__ == "__main__":
