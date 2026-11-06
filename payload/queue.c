@@ -68,6 +68,7 @@
 static struct {
     uint32_t list;      /* the queue, once made */
     uint32_t otg;       /* On-The-Go, while the queue stands in for it */
+    uint8_t otg_dirty;  /* ... and its to-be-saved flag from before ([lib]+0xb42) */
     uint32_t armed;
     uint32_t next;      /* the queue's index of the first song waiting */
     uint32_t resume;    /* playing the queue: go back to ret_list after it */
@@ -163,6 +164,7 @@ void queue_begin_add(void)
         forget_removed();
     }
     q.otg = word(lib, LIB_OTG);
+    q.otg_dirty = ((volatile uint8_t *)word(lib, 0))[0xb42];
     ((volatile uint32_t *)lib)[LIB_OTG] = q.list;
 }
 
@@ -170,8 +172,10 @@ void queue_end_add(void)
 {
     uint32_t lib = library();
 
-    if (lib && q.otg)
+    if (lib && q.otg) {
         ((volatile uint32_t *)lib)[LIB_OTG] = q.otg;
+        ((volatile uint8_t *)word(lib, 0))[0xb42] = q.otg_dirty;   /* On-The-Go's to-be-saved flag, as before the add (playlist.c) */
+    }
     q.otg = 0;
 }
 

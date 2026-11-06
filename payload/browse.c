@@ -34,6 +34,7 @@
 #define LIB_ALBUMS      (0x890 / 4)
 #define LIB_LEVEL       (0x86c / 4)
 #define LIB_LISTS       (0x870 / 4)
+#define LIB_N_LISTS     (0x874 / 4)
 #define UI_CACHE        (0x12f8 / 4)    /* the builders' last counts: songs, albums, composers, artists, genres */
 #define UI_ROWS         (0x1618 / 4)    /* rows picked: genre, artist, composer, album */
 #define UI_MODE         (0x168c / 4)
@@ -162,6 +163,11 @@ static void move_to(uint32_t w, uint32_t row)
         ((void (*)(uint32_t, int32_t))(vt + word(vt, 0x158 / 4)))(w, d);
 }
 
+void browse_drop(void)
+{
+    bs.saved = 0;
+}
+
 void browse_restore(void)
 {
     uint32_t ui = UI_OBJECT, lib = library(), i;
@@ -169,6 +175,10 @@ void browse_restore(void)
     if (!bs.saved || !lib)
         return;
     bs.saved = 0;
+    /* A save that no longer fits the library (a playlist it browsed is gone,
+     * as after a sync) is dropped rather than put back. */
+    if (bs.browsed >= word(lib, LIB_N_LISTS))
+        return;
     browse_list(lib, bs.browsed);
     for (i = 0; i < sizeof bs.lib_state / 4; i++)
         put(lib, LIB_STATE / 4 + i, bs.lib_state[i]);

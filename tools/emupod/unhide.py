@@ -5,7 +5,8 @@ checking as it goes (exits 1 on a wrong step; screenshots uh_*.png):
 1. Settings > Show Hidden on. Songs lists all seven.
 2. Hold Apple: the last row says Hide. Hold Kite (Crate's flag): it says Show; Show: Kite shown,
    the list as it was (seven songs, the cursor on Kite).
-3. Hold Apple > Hide, then hold Apple again: Show; Show. Hold Kite > Hide (hidden again), then
+3. Hold Apple > Hide (the disk asleep: FroggerHidden written by the save task, nothing read on the UI's
+   thread, On-The-Go not marked to be saved), then hold Apple again: Show; Show. Hold Kite > Hide (hidden again), then
    Show again.
 4. Albums: hold Beta (Kite shown, Delta hidden): Hide. Hold Gamma > Hide; hold Gamma: Show.
    Artists: hold Art Two: Show; Show: Echo and Bravo shown. Hold Art One: Hide.
@@ -140,8 +141,22 @@ check("Show: Kite shown", hidden() == ["Delta"], str(hidden()))
 check("  the list as it was, on Kite", titles() == hmcard.BY_TITLE and p.screen() == on_kite)
 
 p.scroll(-4); p.settle(); p.run(300_000)                                # Apple
-check("hold Apple > Hide", hold("3_apple") == 0); pick(5)
+check("hold Apple > Hide", hold("3_apple") == 0)
+p.run(4_000_000)                    # the disk goes to sleep (STANDBY), as on a device a few seconds on
+p.m.hook_start([0x9bab0, 0x40474, 0xc788c])                             # VM steps (the UI's thread), fw_create, disk reads
+pick(5)
 check("  Apple hidden, still listed", hidden() == ["Apple", "Delta"] and len(titles()) == 7, str(hidden()))
+p.run(3_000_000)
+log = p.m.hook_log()
+ui = {r[13] >> 16 for t, pc, r, v in log if pc == 0x9bab0}             # the UI's stack (64 KiB pages)
+creates = [r[13] for t, pc, r, v in log if pc == 0x40474]
+ui_reads = [hex(r[13]) for t, pc, r, v in log if pc == 0xc788c and r[13] >> 16 in ui]
+# On a device, the save (its stat of the iTunesDB for the stamp, the create) woke the sleeping disk
+# on the UI's thread, and an SD adapter that drops out on a wake froze the UI for the 10 s timeout.
+check("  FroggerHidden written by the save task, no disk read on the UI's thread",
+      len(creates) == 1 and creates[0] >> 16 not in ui and not ui_reads,
+      "creates %s, UI stack %s, its reads %s" % ([hex(c) for c in creates], [hex(u << 16) for u in ui], ui_reads[:4]))
+check("  On-The-Go not marked to be saved by the add", rb(rd(lib) + 0xb42) == 0, str(rb(rd(lib) + 0xb42)))
 check("hold Apple: Show", hold("3_apple2") == 1); pick(5)
 check("  Apple shown", hidden() == ["Delta"], str(hidden()))
 p.scroll(4); p.settle(); p.run(300_000)                                 # Kite

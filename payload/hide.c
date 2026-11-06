@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include "hide.h"
 #include "disk.h"
+#include "debug.h"
 
 /* A set of track record addresses, with open addressing. 0 is an empty
  * slot, GONE one whose track was shown again (Show), which a lookup walks
@@ -106,6 +107,10 @@ static uint32_t flagged[MAX_TRACKS / 32];       /* by position: the iTunesDB's f
 #define SHOWN 0x80000000u
 static int loaded;
 static uint32_t gen;                            /* databases loaded */
+/* The iTunesDB's stamp (0x77600: a stat of the file, so a directory read
+ * that wakes a sleeping disk): read once as the database loads, when the
+ * disk is up anyway, not at each Hide on the UI's thread. */
+static uint32_t stamp;
 
 #define make_path   ((uint32_t (*)(void *out, uint32_t kind, const char *dir, const char *name))0x53a24)
 #define find_path   ((uint32_t (*)(void *out, const char *name))0x7b3bc)
@@ -194,25 +199,44 @@ static void note_mine(uint32_t pos, int shown)
         mine[n_mine++] = pos | (shown ? SHOWN : 0);
 }
 
-static void save(void)
-{
-    struct hide_file_header h = { HIDE_FILE_MAGIC, HIDE_FILE_VERSION, 12, db_stamp(), n_mine, 0 };
-    uint32_t i, len, e[3];
+/* The file's contents, staged on the UI's side (stage) for the save task to
+ * write: the header, then the entries. */
+static struct {
+    struct hide_file_header h;
+    uint32_t e[MAX_MINE][3];
+} out;
+static uint32_t out_path[0x108 / 4], out_file[0x80 / 4];
 
-    clear(path, sizeof path / 4);
-    clear(file, sizeof file / 4);
-    if (make_path(path, ITUN, "iPod_Control\\iTunes\\", name) != 0 || fw_create(path, file, 0, FW_DATA) != 0)
-        return;
-    len = sizeof h;
-    fw_write(file, &len, &h);
+static void stage(void)
+{
+    uint32_t i;
+    struct hide_file_header h = { HIDE_FILE_MAGIC, HIDE_FILE_VERSION, 12, stamp, n_mine, 0 };
+
+    out.h = h;
     for (i = 0; i < n_mine; i++) {
-        e[0] = mine[i] & ~SHOWN;
-        e[1] = track_id[e[0]];
-        e[2] = mine[i] & SHOWN ? HIDE_ENTRY_SHOWN : 0;
-        len = sizeof e;
-        fw_write(file, &len, e);
+        out.e[i][0] = mine[i] & ~SHOWN;
+        out.e[i][1] = track_id[out.e[i][0]];
+        out.e[i][2] = mine[i] & SHOWN ? HIDE_ENTRY_SHOWN : 0;
     }
-    fw_close(file);
+}
+
+/* Writes what stage() put in `out`: on the save task (or, with no task, the
+ * UI's). Returns fw_create's result. */
+static int write_out(void)
+{
+    uint32_t len;
+    int r;
+
+    clear(out_path, sizeof out_path / 4);
+    clear(out_file, sizeof out_file / 4);
+    if (make_path(out_path, ITUN, "iPod_Control\\iTunes\\", name) != 0)
+        return -1;
+    if ((r = fw_create(out_path, out_file, 0, FW_DATA)) != 0)
+        return r;
+    len = sizeof out.h + out.h.count * sizeof out.e[0];
+    fw_write(out_file, &len, &out);
+    fw_close(out_file);
+    return 0;
 }
 
 static void note(uint32_t track, int shown)
@@ -243,25 +267,76 @@ void hide_show(uint32_t track)
     note(track, 1);
 }
 
-/* The hold menu's Hide or Show is done: the file written now if the disk is
- * free, else (a refill running, or a drive that stopped answering) from a
- * later tick, so the UI doesn't wait on the disk (disk.c) or write over a
- * song change (skips.c). hide_flush writes one still waiting regardless. */
-static int save_pending;
+/* The hold menu's Hide or Show is done: the file is written, but never on
+ * the UI's thread. Its stamp (a stat of the iTunesDB, now read at load)
+ * and creating the file both wake a disk that has gone to sleep
+ * (and a flash card's IDE bridge with it) and reads the FAT; an SD adapter
+ * can drop out on that wake-up (the supply dips, disk.c), and the UI then
+ * waited out the 10 s timeout and the recovery: the wheel and Menu frozen,
+ * and the clicks made meanwhile replayed at once afterwards. So a task of
+ * our own, FroggerSave (as art.c's FroggerArt reads covers), writes it once
+ * the disk is free (disk_idle: no refill running, so no write over a song
+ * change, skips.c). The UI only stages the contents (save_tick, hide_flush)
+ * while the task isn't writing, so they don't change under it. With no
+ * task, the UI writes them itself at a tick when the disk is free. */
+static volatile struct { uint32_t want, staged, done; int task; } sv;
+
+#define fw_thread   ((uint32_t (*)(const char *name, void (*entry)(void), const char *args, uint32_t prio, \
+                                   uint32_t stack, uint32_t zero1, uint32_t zero2))0xac6fc)
+#define fw_sleep    ((void (*)(uint32_t zero, uint32_t ticks))0x3460)   /* 10 ms ticks */
+#define SAVE_TASK_PRIO  0x40    /* TrackCacheReadTask's, as FroggerArt */
+#define SAVE_TASK_STACK 0x1000
+#define SAVE_POLL_TICKS 10      /* 100 ms */
+
+static void save_task_main(void)
+{
+    uint32_t staged;
+    int r;
+
+    for (;;) {
+        staged = sv.staged;
+        if (staged != sv.done && disk_idle(DISK_IDLE_US)) {
+            r = write_out();
+            debug_note(DEBUG_TAG('h', 'w', 'r', 't'), (uint32_t)r, out.h.count);
+            sv.done = staged;
+        } else {
+            fw_sleep(0, SAVE_POLL_TICKS);
+        }
+    }
+}
 
 void hide_save(void)
 {
-    save_pending = 1;
-    if (disk_idle(DISK_IDLE_US))
-        hide_flush();
+    sv.want++;
+    debug_note(DEBUG_TAG('h', 's', 'a', 'v'), n_mine, n_tracks);
+    if (!sv.task) {
+        uint32_t t = fw_thread("FroggerSave", save_task_main, 0, SAVE_TASK_PRIO, SAVE_TASK_STACK, 0, 0);
+        sv.task = t && t < 0x80000000u ? 1 : -1;
+    }
 }
 
+/* Stages a save still to be written for the task (counts_hook too, as Apple
+ * writes Play Counts). */
 void hide_flush(void)
 {
-    if (!save_pending)
-        return;
-    save_pending = 0;
-    save();
+    if (sv.task > 0 && sv.want != sv.staged && sv.staged == sv.done) {
+        stage();
+        sv.staged = sv.want;
+    }
+}
+
+static void save_tick(void)
+{
+    if (sv.want == sv.staged || sv.staged != sv.done)
+        return;                 /* nothing new, or the task is still writing the last */
+    if (sv.task > 0)
+        hide_flush();
+    else if (disk_idle(DISK_IDLE_US)) {     /* no task: on the UI's thread */
+        stage();
+        sv.staged = sv.want;
+        debug_note(DEBUG_TAG('h', 'w', 'r', 'u'), (uint32_t)write_out(), out.h.count);
+        sv.done = sv.staged;
+    }
 }
 
 /* tick_hook, on the UI thread: once the database has loaded, the file back
@@ -271,11 +346,11 @@ void hide_tick(void)
     struct hide_file_header h;
     uint32_t len, i, pos, e[3];
 
-    if (save_pending && disk_idle(DISK_IDLE_US))
-        hide_flush();
+    save_tick();
     if (loaded || !n_tracks)
         return;
     loaded = 1;
+    stamp = db_stamp();
     clear(flagged, sizeof flagged / 4);
     for (pos = 0; pos < n_tracks; pos++)
         if (hide_track(track_rec[pos]))
@@ -287,7 +362,7 @@ void hide_tick(void)
     len = sizeof h;
     if (fw_read(file, &len, &h) == 0 && len == sizeof h && h.magic == HIDE_FILE_MAGIC
         && ((h.version == 1 && h.entry_size == 8) || (h.version == HIDE_FILE_VERSION && h.entry_size == 12))
-        && h.stamp == db_stamp())
+        && h.stamp == stamp)
         for (i = 0; i < h.count; i++) {
             e[2] = 0;
             len = h.entry_size;

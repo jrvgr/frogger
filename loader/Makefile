@@ -42,7 +42,7 @@ $(BUILD)/frogger-loader.elf: $(OBJS) loader.lds
 # the debug record (payload/debug.h), which has to survive a reset.
 $(BUILD)/frogger-loader.bin: $(BUILD)/frogger-loader.elf
 	$(OBJCOPY) -O binary $< $@
-	@test $$((0x346368 + $$(wc -c < $@))) -le $$((0x35f800)) || { echo "loader overlaps the debug record (payload/debug.h)"; rm $@; exit 1; }
+	@test $$((0x346368 + $$(wc -c < $@))) -le $$((0x358000)) || { echo "loader overlaps the debug record (payload/debug.h)"; rm $@; exit 1; }
 
 clean:
 	rm -rf $(BUILD)

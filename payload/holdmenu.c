@@ -439,6 +439,7 @@ static uint32_t act(int action, uint32_t track, volatile uint32_t *l)
         break;
     }
     }
+    debug_note(DEBUG_TAG('a', 'c', 't', '0' + action), hm.show | hm.np << 1 | hm.upnext << 2, track);
     hm.go = GO_CLOSE;           /* the list as it was (hidden songs gone) once the popup goes */
     hm.go_pending = 1;
     return HM_GO_BACK;
@@ -448,11 +449,28 @@ static uint32_t act(int action, uint32_t track, volatile uint32_t *l)
  * up again, its browse state goes back (browse.c). */
 static void screen(int back)
 {
+    debug_note(DEBUG_TAG('s', 'c', 'r', back ? 'b' : 'f'), hm.go | hm.go_pending << 4 | (up.open << 8), (uint32_t)hm.go_depth);
     if (!hm.go)
         return;
     if (hm.go_pending) {
-        if (!back)
+        if (!back) {
+            /* A screen opens while the popup's going is still to come: its
+             * slide back went uncounted (fn 20 can return before either
+             * slide, 0x592; never in emupod, suspected on a device). Go to
+             * and Up Next open their list right after
+             * going back, so this is that list, at depth 1; after Hide (or
+             * an action that went nowhere) the list is up again: drop the
+             * saved state rather than put it back over another list later. */
+            hm.go_pending = 0;
+            if (hm.go == GO_RETURN) {
+                hm.go_depth = 1;
+                return;
+            }
+            hm.go = GO_NONE;
+            up.open = 0;
+            browse_drop();
             return;
+        }
         hm.go_pending = 0;          /* the popup went */
         hm.go_depth = 0;
         if (hm.go == GO_RETURN)
@@ -632,6 +650,7 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
             volatile uint32_t *l = local0(vm);
             if (hm.acting) {
                 hm.action = action_of(TCMD_UNTAG(*l));
+                debug_note(DEBUG_TAG('r', 'o', 'w', '0' + hm.action), TCMD_UNTAG(hm.row), (uint32_t)i);
                 if (hm.upnext) {
                     hm.acting = 0;
                     return upnext_act(hm.action, TCMD_UNTAG(hm.row));
@@ -677,6 +696,7 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
         }
         if ((off == h->flash || off == h->end) && hm.acting) {
             hm.acting = 0;
+            debug_note(DEBUG_TAG('f', 'l', 's', 'h'), (uint32_t)hm.action, off);
             if (hm.action == ACT_QUEUE) {
                 queue_end_add();
                 return HM_GO_BACK;
@@ -788,6 +808,9 @@ static int trail_worthy(uint32_t pc)
     uint32_t off = pc - TCMD_CODE;
     unsigned i;
 
+    if (pc >= HM_SNIPPET && pc < HM_SNIPPET_END)    /* our bytecode: ~150 steps a popup */
+        return pc == HM_OPEN || pc == HM_RELABEL || pc == HM_VIS_RUN || pc == HM_UPNEXT_BUILD || pc == HM_NP_CALL
+            || pc == HM_PICK || pc == HM_PICK_CALL || pc == HM_QS_RUN || pc == HM_MM_RUN;
     if (pc < HM_LO || pc > HM_HI || pc == HM_PICKED || pc == HM_PLAYLISTS || pc == HM_PICK_MENU)
         return 1;
     for (i = 0; i < N_HANDLERS; i++)

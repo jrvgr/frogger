@@ -48,7 +48,7 @@ void hide_add(uint32_t track);
 void hide_show(uint32_t track);
 void hide_save(void);
 void hide_tick(void);
-void hide_flush(void);       /* a save hide_save left for later, now (counts_hook) */
+void hide_flush(void);       /* a save hide_save asked for, staged for the save task (counts_hook) */
 uint32_t hide_gen(void);
 uint32_t hide_tracks(void);
 int hide_position(uint32_t track, uint32_t *id);
