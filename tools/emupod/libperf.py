@@ -8,7 +8,7 @@ card, build/emupod-work/libperf-card.img.
 
     libperf.py DIR            # DIR: the copied iTunes folder (keep a private library out of the repo)
 """
-import argparse, shutil, struct, sys
+import argparse, shutil, struct
 from pathlib import Path
 from ipod3g import Pod, W
 import hmcard
