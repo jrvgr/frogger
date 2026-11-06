@@ -1,0 +1,22 @@
+name: Cache cleanup
+
+# A closed pull request's caches can't be used by anything else: delete them, so the repo stays
+# under its 10 GB of Actions cache. No checkout, so pull_request_target runs no PR code.
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    name: Delete the pull request's caches
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/caches?ref=$REF&per_page=100" --jq '.actions_caches[].id' |
+            while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" && echo "deleted $id"; done
