@@ -63,6 +63,9 @@ cycle (`npcycle.py`), the hold menu and queue step by step (`holdmenu.py`).
 - Cards: `mkcards.py`, `hmcard.py`, `mkart.py`, `mkresume.py`, `library.py` (the big library:
   generated, or yours with `FROGGER_LIBRARY=DIR`); `mkimage.py` makes the Frogger
   RAM image emupod boots; `checkart.py` reads a FroggerArt and draws it.
+- `libperf.py DIR`: browsing and the hold menu's actions on a real library (a copy of an iPod's
+  `iPod_Control/iTunes`, kept out of the repo), Hold Menu on and off: instructions, VM steps,
+  `0x58440` calls and disk reads on the UI's thread per step.
 - `screenshots.py`: the README's screenshots (`docs/screenshots/`), on a demo card it makes.
 - `probes/`: one-off reverse-engineering traces, kept for how things were found
   (`docs/re-notes.md`, `docs/tcmd.md`). They check nothing. Run them from this folder too, e.g.

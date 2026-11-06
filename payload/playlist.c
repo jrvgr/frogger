@@ -65,6 +65,7 @@ static struct {
     uint32_t scratch;
     uint32_t loading;           /* playlist_load_saved's own (the scratch may be in use) */
     uint32_t otg;               /* On-The-Go, while something stands in for it */
+    uint8_t otg_dirty;          /* ... and its to-be-saved flag from before */
     int loaded;                 /* the FroggerPlaylist files have been read */
     uint32_t save_list, save_index;     /* a save waiting for the disk (playlist_flush) */
 } pl;
@@ -89,13 +90,18 @@ static uint32_t list_count(uint32_t list)
 static void stand_in(uint32_t lib, uint32_t list)
 {
     pl.otg = word(lib, LIB_OTG);
+    pl.otg_dirty = ((volatile uint8_t *)word(lib, 0))[PREFS_OTG_DIRTY];
     ((volatile uint32_t *)lib)[LIB_OTG] = list;
 }
 
 static void stand_down(uint32_t lib)
 {
-    if (pl.otg)
+    if (pl.otg) {
         ((volatile uint32_t *)lib)[LIB_OTG] = pl.otg;
+        /* stock's add marked On-The-Go to be saved (0xc0b30), but it didn't
+         * change: Apple's next Play Counts write (0xf4d6c) needn't rewrite it */
+        ((volatile uint8_t *)word(lib, 0))[PREFS_OTG_DIRTY] = pl.otg_dirty;
+    }
     pl.otg = 0;
 }
 

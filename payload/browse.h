@@ -12,6 +12,7 @@ enum { LIST_OTHER, LIST_SONGS, LIST_ALBUMS, LIST_ARTISTS };
 void browse_held(void);
 void browse_save(int kind, uint32_t row);
 void browse_restore(void);
+void browse_drop(void);      /* forget what browse_save kept */
 uint32_t browse_album_row(uint32_t track);
 uint32_t browse_artist_row(uint32_t track);
 unsigned browse_album_items(uint32_t track, int after, uint32_t *list, uint32_t *idx, uint32_t *nums, unsigned max);

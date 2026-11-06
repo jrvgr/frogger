@@ -27,6 +27,8 @@ static struct dbg {
     uint32_t regs[14];                  /* r0-r12, then lr in the abort mode */
     uint32_t stack[DEBUG_STACK];
     uint32_t n;                         /* trail entries written */
+    uint32_t nn;                        /* notes written */
+    uint32_t notes[DEBUG_NOTES][4];     /* tag, a, b, ms since boot; tag DEBUG_TAG_VM: n then */
     uint32_t trail[DEBUG_TRAIL][2];     /* pc, the pc it went on with */
 } *const dbg = (struct dbg *)DEBUG_ADDR;
 
@@ -43,6 +45,25 @@ void debug_vm(uint32_t pc, uint32_t to)
     i = dbg->n++ % DEBUG_TRAIL;
     dbg->trail[i][0] = pc;
     dbg->trail[i][1] = to;
+}
+
+#define FW_CLOCK_US     0x87de0     /* 0x87de0(&us) */
+
+/* The C side's notes, in their own ring: what the hold menu did, the saves
+ * and what they returned, the screen counting (holdmenu.c, hide.c). Each
+ * also notes how far the VM trail was, to place it there. */
+void debug_note(uint32_t tag, uint32_t a, uint32_t b)
+{
+    uint32_t i, us;
+
+    if (!started)
+        return;
+    ((void (*)(uint32_t *))FW_CLOCK_US)(&us);
+    i = dbg->nn++ % DEBUG_NOTES;
+    dbg->notes[i][0] = tag;
+    dbg->notes[i][1] = a;
+    dbg->notes[i][2] = b;
+    dbg->notes[i][3] = (us / 1000) << 12 | (dbg->n & 0xfff);
 }
 
 static int readable(uint32_t a)
@@ -90,7 +111,7 @@ void crash_note(const uint32_t *frame, uint32_t kind, uint32_t spsr, uint32_t sp
 
 static uint32_t out_path[0x108 / 4];
 static uint32_t out_file[0x80 / 4];
-static char line[96];
+static char line[512];               /* lines are put together here and written a block at a time */
 static unsigned len;
 
 static void put(const char *s)
@@ -119,14 +140,32 @@ static void dec(uint32_t v)
         line[len++] = d[--n];
 }
 
+static void write_out(void)
+{
+    uint32_t n = len;
+
+    if (n)
+        fw_write(out_file, &n, line);
+    len = 0;
+}
+
+/* Ends a line; writes the block when another might not fit. (The header's
+ * line once ran past a 96-byte buffer and lost its newline.) */
 static void flush(void)
 {
-    uint32_t n;
+    if (len > sizeof line - 1)
+        len = sizeof line - 1;
+    line[len++] = '\n';
+    if (len > sizeof line - 120)
+        write_out();
+}
 
-    put("\n");
-    n = len;
-    fw_write(out_file, &n, line);
-    len = 0;
+static void tag(uint32_t t)
+{
+    unsigned i;
+
+    for (i = 0; i < 4; i++, t >>= 8)
+        line[len++] = (char)((t & 0xff) >= ' ' && (t & 0xff) < 0x7f ? t & 0xff : '?');
 }
 
 static void write_record(void)
@@ -165,6 +204,13 @@ static void write_record(void)
     } else {
         put("no crash recorded"); flush();
     }
+    count = dbg->nn < DEBUG_NOTES ? dbg->nn : DEBUG_NOTES;
+    put("notes, oldest first ("); dec(dbg->nn); put(" in all): ms tag a b @trail entry (low 12 bits)"); flush();
+    for (i = dbg->nn - count; i < dbg->nn; i++) {
+        const uint32_t *t = dbg->notes[i % DEBUG_NOTES];
+        dec(t[3] >> 12); put(" "); tag(t[0]); put(" "); hex(t[1]); put(" "); hex(t[2]);
+        put(" @"); dec(t[3] & 0xfff); flush();
+    }
     count = dbg->n < DEBUG_TRAIL ? dbg->n : DEBUG_TRAIL;
     from = dbg->n - count;
     put("vm trail, oldest first; c0de000K abort-lr, spsr lr, sp r0 is a crash ("); dec(dbg->n); put(" in all): pc [-> pc it went on with]"); flush();
@@ -176,6 +222,7 @@ static void write_record(void)
         }
         flush();
     }
+    write_out();
     fw_close(out_file);
 }
 
@@ -195,6 +242,7 @@ void debug_tick(void)
     }
     dbg->kind = 0;
     dbg->n = 0;
+    dbg->nn = 0;
     for (i = 0; i < DEBUG_TRAIL; i++)
         dbg->trail[i][0] = dbg->trail[i][1] = 0;
     started = 1;
