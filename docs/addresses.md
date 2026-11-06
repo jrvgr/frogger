@@ -27,8 +27,8 @@ Two things to know before writing anything:
 | --- | --- | --- | --- | --- |
 | `0x000000–0x346368` | Apple's `osos` image: code, the UI bundle, `.data` copy sources. **Read-only at runtime on a device.** | everything | confirmed (device) | [Address spaces][as] |
 | `0x28000000` | `DRAM_START`: where Apple's boot puts the image, and where the loader sees it before the remap | `loader/pp5002.h`, `tools/mkpayload.py` | confirmed | [Address spaces][as] |
-| `0x346368–0x35f800` | The loader's appended copy (loaded by Apple's boot right after the image). `loader/Makefile` checks that it ends below the debug record | `loader/Makefile` | confirmed | [Free RAM][ram] |
-| `0x35f800–0x360000` | Frogger's debug record (`DEBUG_ADDR`, `DEBUG_END`), DEBUG=1 builds. Survives a reset while RAM keeps power | `payload/debug.h`, `debug.c` | confirmed (device) | `payload/debug.c` |
+| `0x346368–0x358000` | The loader's appended copy (loaded by Apple's boot right after the image). `loader/Makefile` checks that it ends below the debug record | `loader/Makefile` | confirmed | [Free RAM][ram] |
+| `0x358000–0x360000` | Frogger's debug record (`DEBUG_ADDR`, `DEBUG_END`), DEBUG=1 builds. Survives a reset while RAM keeps power | `payload/debug.h`, `debug.c` | confirmed (device) | `payload/debug.c` |
 | `0x360000–0x36fc00` | Referenced by Apple (`0x24664`, `0x33500`); unknown. Stay below `0x360000` | `payload/debug.h` | likely | [Free RAM][ram] |
 | `0x36fc00–0x37b048` | Apple's `.data` (copied from `0x313da0`) | | confirmed | [Free RAM][ram] |
 | `0x37b048–0x449dc8` | Apple's `.bss`. The globals below live here | | confirmed | [Free RAM][ram] |

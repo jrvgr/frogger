@@ -176,9 +176,9 @@ What this means:
 - **`0x346368–0x360000`, about 103 KiB**, between the end of the image and the next static
   region, is where the payload used to live (`0x34c000–0x360000`, 80 KiB, until it ran out).
   Apple's boot loads the loader's appended copy (which carries the payload's code) at its
-  start, and the debug record sits at its top, `0x35f800–0x360000` (`payload/debug.h`;
+  start, and the debug record sits at its top, `0x358000–0x360000` (`payload/debug.h`; `0x35f800`, 2 KiB, until it held a whole session;
   `0x34b800` until the payload moved): nothing loads or clears it across a reset. So the
-  loader can grow to about 100 KiB. `0x33500` only uses `0x346364` as a divisor and
+  loader can grow to 72 KiB. `0x33500` only uses `0x346364` as a divisor and
   `0x360000` as a base constant; `0x24664`'s table copies 0 bytes to `0x360000`.
 - After boot, the copy sources (`0x313da0–0x346368`) are dead too, unless sleep or
   resume runs the scatter loader again. Not checked yet.
