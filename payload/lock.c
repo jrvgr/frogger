@@ -1,5 +1,5 @@
 /* Lock Cover: with Hold on and a song playing or paused, the screen shows the
- * song's cover large (the 72x72 FroggerArt cover at 1.5x), its title and a
+ * song's cover (the 72x72 FroggerArt cover, centred), its title and a
  * progress bar, like a lock screen. Hold off, the screen is what it was.
  * Settings › Lock Cover switches it off; with nothing playing it's stock.
  *
@@ -94,17 +94,15 @@ static void put(unsigned x, unsigned y, unsigned level)
     *b = (uint8_t)((*b & ~(3u << shift)) | level << shift);
 }
 
-/* The cover, 72x72 BMap rows, at 1.5x: destination pixel d shows source d * 2 / 3. */
+/* The cover, 72x72 BMap rows, pixel for pixel. */
 static void draw_art(const uint8_t *px)
 {
     unsigned x, y;
 
     for (y = 0; y < LOCK_ART; y++) {
-        const uint8_t *row = px + (y * 2 / 3) * NP_ART_ROW;
-        for (x = 0; x < LOCK_ART; x++) {
-            unsigned s = x * 2 / 3;
-            put(LOCK_ART_LEFT + x, LOCK_ART_TOP + y, (row[s / 4] >> (6 - 2 * (s & 3))) & 3);
-        }
+        const uint8_t *row = px + y * NP_ART_ROW;
+        for (x = 0; x < LOCK_ART; x++)
+            put(LOCK_ART_LEFT + x, LOCK_ART_TOP + y, (row[x / 4] >> (6 - 2 * (x & 3))) & 3);
     }
 }
 
