@@ -87,6 +87,7 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 | `0xc788c` | `0xe92d47fc` `push {r2-r10, lr}` | `disk_read_hook` | B | (calls `0xc7890`) | First instruction of the ATA read `0xc788c(ata, unit, lba, buf, count)`: runs it again, up to 3 tries in all, while it fails with `ata+0x1e0` set | `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
 | `0x9dbac` | `0xe5940190` `ldr r0, [r4, #400]` | `flash_id_hook` | BL | | ATA dispatcher `0x9da1c`, op `0xEC`, as the IDENTIFY ends (`r4` the ATA object, error at `+0x190`, the 512 bytes at `[+0x17c]`): keep words 0 and 217 and the model for Auto | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
 | `0x57820` | `0xe92d4010` `push {r4, lr}` | `flash_hold_hook` | B | `0x57824` | First instruction of the disk arbiter's `hold(client, ms)`: with Flash Storage on, `ms` is cut to 1000 | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
+| `0x94984` | `0xeb002a3f` `bl 0x9f288` | `preload_hook` (C) | BL | | The playback tick `0x94918` (UI thread), its check before the next-song preload (`0x94a58` → `0xbca48`, which takes the volume lock): calls `0x9f288` itself, and says not now while `disk_stalled` (a read stuck 250 ms), so a hung reader holding the lock doesn't freeze the UI | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 
 Other patches, in `loader/patches.c` (bytes, not hooks):
 

@@ -55,6 +55,7 @@ HOOKS = [
     (0xc788c, 0xe92d47fc, "disk_read_hook"),     # push  {r2-r10, lr}
     (0x9dbac, 0xe5940190, "flash_id_hook"),      # ldr   r0, [r4, #400]
     (0x57820, 0xe92d4010, "flash_hold_hook"),    # push  {r4, lr}
+    (0x94984, 0xeb002a3f, "preload_hook"),       # bl    0x9f288
 ]
 
 # Hooks entered with a plain B instead of BL: they sit where lr is still live (the first

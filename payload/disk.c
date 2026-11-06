@@ -18,6 +18,7 @@
  * set, a bounded number of times, so the failed command comes back too. */
 
 #include <stdint.h>
+#include "disk.h"
 
 #define OBJ_STATUS      0x10c       /* obj+0x10c: the status register (0xc00031fc) */
 #define OBJ_CTL         0x114       /* obj+0x114: device control (0xc00033f8; 0x942cc writes it with strb) */
@@ -72,7 +73,7 @@ void disk_reinit(uint8_t *obj)
 #define OBJ_REINIT      0x1e0       /* obj+0x1e0: re-init pending (0x913d0 sets it) */
 
 static uint8_t *disk_obj;
-static volatile uint32_t disk_reads, disk_last;
+static volatile uint32_t disk_reads, disk_last, disk_busy_since;
 
 static uint32_t irq_off(void)
 {
@@ -98,10 +99,11 @@ static uint32_t now_us(void)
 /* From disk_read_hook, as a read starts (obj: the ATA object) and ends. */
 void disk_read_begin(uint8_t *obj)
 {
-    uint32_t s = irq_off();
+    uint32_t t = now_us(), s = irq_off();
 
     disk_obj = obj;
-    disk_reads++;
+    if (disk_reads++ == 0)
+        disk_busy_since = t;
     irq_restore(s);
 }
 
@@ -126,4 +128,41 @@ int disk_idle(uint32_t us)
     if (!obj)
         return 1;                   /* no read yet: nothing to wait for */
     return !*(volatile uint32_t *)(obj + OBJ_REINIT) && !(*reg(obj, OBJ_ALT) & (ST_BSY | ST_DRQ));
+}
+
+/* 1 if a read has been running for `us` with none ending meanwhile (the
+ * drive stopped answering: disk_read_hook is waiting out the 10 s timeout or
+ * retrying), or a re-init is pending. A read that just queued behind the
+ * stuck one doesn't count as progress. */
+int disk_stalled(uint32_t us)
+{
+    uint8_t *obj = disk_obj;
+    uint32_t t = now_us(), since;
+
+    if (obj && *(volatile uint32_t *)(obj + OBJ_REINIT))
+        return 1;
+    if (!disk_reads)
+        return 0;
+    since = (int32_t)(disk_last - disk_busy_since) > 0 ? disk_last : disk_busy_since;
+    return t - since >= us;
+}
+
+/* The next-song preload, on the UI thread (preload_hook, the bl 0x9f288 at
+ * 0x94984 in the playback tick 0x94918, which the UI dispatcher runs). Once
+ * 0x9f288 lets it, the tick loads the next song through 0xbca48, and that
+ * takes the volume's lock (fw_volume, 0xb1d50, at 0x66c74). A
+ * reader whose command the drive never answered holds that lock for the
+ * whole timeout and recovery (an FS worker task, the 0x14a810 loop, or the
+ * cover task), so the UI would wait with it: no wheel, no Menu, for 10 s and
+ * more (stock 2.3 does). While the disk is stalled the tick skips the preload
+ * as when 0x9f288 says no (to 0x94b38): [player+0xb4c] stays set, and a later
+ * tick, once the disk answers, preloads. */
+#define FW_PRELOAD_BUSY 0x9f288     /* 0x9f288(lib): nonzero, not now */
+#define PRELOAD_STALL_US 250000     /* a read takes ms; a sleeping hard drive's spin-up, a second or two */
+
+uint32_t preload_hook(void *lib)
+{
+    uint32_t busy = ((uint32_t (*)(void *))FW_PRELOAD_BUSY)(lib);
+
+    return busy ? busy : (uint32_t)disk_stalled(PRELOAD_STALL_US);
 }
