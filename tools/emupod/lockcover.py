@@ -2,8 +2,8 @@
 Checks:
 
 1. Nothing playing: Hold on is stock (the lock in the title bar, the rest of the screen as it was).
-2. A song playing, on the main menu: Hold on shows the lock screen (the cover at 1.5x, matching
-   the 72x72 cover in memory pixel for pixel, a title line, the bar); a key with Hold on changes
+2. A song playing, on the main menu: Hold on shows the lock screen (the cover, matching the
+   72x72 cover in memory pixel for pixel, a title line, the bar); a key with Hold on changes
    nothing; Hold off gives back the main menu as it was.
 3. The same from Now Playing's cover page.
 4. Settings > Lock Cover off: saved (prefs flags bit 27); Hold on is stock again.
@@ -15,8 +15,8 @@ from ipod3g import Pod, W, ROOT
 SYM = {l.split()[2]: int(l.split()[0], 16) for l in open(ROOT / "build/payload/payload.sym") if len(l.split()) == 3}
 ROW_LOCK = 17                                       # in Settings: after Page Slide (16)
 BIT_LOCK = 27
-ART = 108                                           # lock.h: LOCK_ART, LOCK_ART_TOP, LOCK_ART_LEFT
-TOP, LEFT = 2, (160 - ART) // 2
+ART = 72                                            # lock.h: LOCK_ART, LOCK_ART_TOP, LOCK_ART_LEFT
+TOP, LEFT = 16, (160 - ART) // 2
 BAR = 19                                            # the title bar's rows
 fails = []
 
@@ -33,18 +33,18 @@ def check(what, ok, msg=""):
 
 
 def lock_screen_ok(s):
-    """The cover region is the 72x72 cover in art.c's buffer at 1.5x, and the title and bar
+    """The cover region is the 72x72 cover in art.c's buffer, and the title and bar
     rows below it aren't blank."""
     px = bytes(p.m.mem_read(SYM["art"] + 28, 20 * 72))
     for y in range(ART):
         for x in range(ART):
-            sx, sy = x * 2 // 3, y * 2 // 3
+            sx, sy = x, y
             want = (px[sy * 20 + sx // 4] >> (6 - 2 * (sx & 3))) & 3
             if s[(TOP + y) * 160 + LEFT + x] != want:
                 return "cover differs at (%d, %d)" % (x, y)
-    if not any(s[113 * 160:121 * 160]):
+    if not any(s[96 * 160:104 * 160]):
         return "no title"
-    if not any(s[123 * 160:126 * 160]):
+    if not any(s[109 * 160:112 * 160]):
         return "no bar"
     return None
 
