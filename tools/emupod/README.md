@@ -44,6 +44,7 @@ this folder.
 | The disk coming back after it stops answering (SRST, re-init, retry) | `diskhang.py` |
 | Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto | `flash.py` |
 | Frogger's files after another app's sync (new ids, new order): hides, skips, covers, bookmarks, playlists; the old versions read | `dbid.py` |
+| DEBUG=1: the debug record comes out whole in FroggerDebug on the next boot (skipped on a plain build) | `debugrecord.py` |
 
 Device realism (`tests/test_device.py`, CONTRIBUTING.md): on a big library card (`library.py`),
 

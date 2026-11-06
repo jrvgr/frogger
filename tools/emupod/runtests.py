@@ -35,7 +35,10 @@ FEATURES = {
     "lockcover": ("Lock Cover: Hold on, Hold off, the switch off", ["lock.c"]),
     "flash": ("Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto", ["flash.c"]),
     "dbid": ("Frogger's files after another app's sync: hides, skips, covers, bookmarks, playlists", ["tracks.c", "hide.c", "skips.c", "art.c", "resume.c", "playlist.c"]),
+    "debugrecord": ("DEBUG=1: the debug record comes out whole in FroggerDebug on the next boot", ["debug.c"]),
 }
+# A check's exit code when the build it needs isn't the one made (debugrecord.py on a plain build).
+SKIP = 77
 CHECKS = list(FEATURES)
 # Features no check covers yet: the script that shows them, in screenshots only.
 UNCHECKED = {
@@ -65,8 +68,8 @@ def main():
     failed = []
     with ThreadPoolExecutor(a.j) as pool:
         for name, code, secs in pool.map(run, a.scripts):
-            print("%-14s %s  %4.0f s" % (name, "ok" if code == 0 else "FAILED", secs), flush=True)
-            if code:
+            print("%-14s %s  %4.0f s" % (name, {0: "ok", SKIP: "skipped"}.get(code, "FAILED"), secs), flush=True)
+            if code and code != SKIP:
                 failed.append(name)
     for name in failed:
         print(f"\n--- {name}.log ---")
