@@ -33,6 +33,7 @@ jobs:
     outputs:
       lint: ${{ steps.filter.outputs.lint }}
       build: ${{ steps.filter.outputs.build }}
+      portable: ${{ steps.filter.outputs.portable }}
       emulator: ${{ steps.filter.outputs.emulator }}
     steps:
       # A push to main that is a merged pull request's commit: that PR's run already tested it,
@@ -45,7 +46,12 @@ jobs:
         run: |
           pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
                  --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"$GITHUB_SHA\")][0].number // empty")
-          if [ -n "$pr" ]; then echo "From pull request #$pr: its checks passed there, skipping."; echo "yes=true" >> "$GITHUB_OUTPUT"; fi
+          # A merge that changes the toolchain still runs once on main: only main saves the Nix
+          # caches (see below), and pull requests read main's.
+          if [ -n "$pr" ] && ! gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq '.files[].filename' \
+               | grep -qxE 'flake\.(nix|lock)|\.github/workflows/ci\.yml'; then
+            echo "From pull request #$pr: its checks passed there, skipping."; echo "yes=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
         if: steps.merged.outputs.yes != 'true'
       - uses: dorny/paths-filter@v4
@@ -70,6 +76,15 @@ jobs:
               - payload/**
               - tools/**
               - tests/**
+            portable:          # the Windows and macOS jobs (macOS minutes count 10x)
+              - .github/workflows/ci.yml
+              - tools/install.py
+              - tools/podinfo.py
+              - tools/coverart.py
+              - tests/conftest.py
+              - tests/test_install.py
+              - tests/test_podinfo.py
+              - tests/test_coverart.py
             emulator:
               - *ci
               - loader/**
@@ -106,6 +121,8 @@ jobs:
           primary-key: nix-build-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
           restore-prefixes-first-match: nix-build-${{ runner.os }}-
           gc-max-store-size-linux: 3G
+          # Only main saves (a store is ~1 GB, the repo gets 10 GB): pull requests restore main's.
+          save: ${{ github.ref == 'refs/heads/main' }}
       - name: Build the loader and payload
         run: nix develop -c make -C loader
       # Each pytest job leaves its JUnit XML (and the coverage of tools/) in build/results for the
@@ -130,7 +147,7 @@ jobs:
   portable:
     name: Unit tests on ${{ matrix.os }}
     needs: changes
-    if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.build == 'true') }}
+    if: ${{ !cancelled() && (inputs.all || needs.changes.outputs.portable == 'true') }}
     strategy:
       fail-fast: false
       matrix:
@@ -170,6 +187,8 @@ jobs:
           primary-key: nix-emu-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
           restore-prefixes-first-match: nix-emu-${{ runner.os }}-
           gc-max-store-size-linux: 5G
+          # Only main saves (a store is ~1 GB, the repo gets 10 GB): pull requests restore main's.
+          save: ${{ github.ref == 'refs/heads/main' }}
       # Apple's firmware is never in this repo: it's fetched from Apple (once, then from the
       # Actions cache) and checked.
       - uses: actions/cache@v6
