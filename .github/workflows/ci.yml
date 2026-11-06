@@ -219,6 +219,11 @@ jobs:
         run: |
           python3 .github/scripts/report.py junit "Unit tests that need the firmware" build/results/firmware.xml
           python3 .github/scripts/report.py junit "Emulator checks" build/results/emupod.xml --checks
+          # Device realism (tests/test_device.py): the speed budget's table and UI-thread disk I/O
+          shopt -s nullglob
+          for f in build/emupod-work/perf-generated.md build/emupod-work/uidisk-generated-*.md; do
+            cat "$f" >> "$GITHUB_STEP_SUMMARY"; echo >> "$GITHUB_STEP_SUMMARY"
+          done
           [ ! -f .coverage ] || mv .coverage build/results/.coverage.emulator
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}

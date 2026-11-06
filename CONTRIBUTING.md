@@ -46,6 +46,43 @@ when the screen does):
     python3 tools/emupod/screenshots.py                    # every shot, on a demo card of made-up music
     python3 tools/emupod/screenshots.py --raw quick        # one scene, plus plain shots in build/emupod-work
 
+## Device realism
+
+emupod runs on a fast host, with no cache misses, on two-song test cards and a disk that never
+sleeps or stalls. A real 3G has thousands of songs, a slow CPU and a disk (or an SD adapter) that
+takes seconds to wake and sometimes stops answering. So a change can pass every check and still
+make the menus sluggish or freeze on Menu. Three guards in `tests/test_device.py` look for that.
+They run on a big library card, and they're part of `pytest -n auto -m emupod`, CI included:
+
+| Guard | Marker | What it catches |
+| --- | --- | --- |
+| `tools/emupod/perf.py` | `perf` | Frogger costing more CPU than stock 2.3 for everyday actions: Menu back, Select into a list, scrolling, hold Select or Menu, a song change. It counts the ARM instructions run from the key until the CPU is idle again, stock against Frogger. The budget is stock × 1.25 + 0.65 M (50 ms), or a cap for popups stock doesn't have |
+| `tools/emupod/uidisk.py` | `uidisk` | Disk I/O on the UI thread. That's a frozen wheel while the disk wakes, and a ~10 s freeze when an adapter stalls. Every ATA command issued on the UI's stack while a key is handled fails the guard, with its call site (lr), unless stock 2.3 issues it from the same place |
+| `tools/emupod/stall.py` | `stall` | A UI that waits on a stalled disk. The drive is hung at a random moment as a song loads. While it's hung, Menu, the wheel and the hold menu (with its rows that save) must answer within 500 ms of emulated time, and the drive must come back afterwards |
+
+The card is `build/emupod-work/lib-generated-card.img` (`tools/emupod/library.py`, made by
+`mkcards.py` or on first use). It's a made-up library: 5,000 songs, 400 albums, 800 artists,
+compilations, long titles, 20 playlists and covers. To run the guards on your own library, copy
+`iPod_Control/iTunes/iTunesDB` from your iPod (with `FroggerArt`, `FroggerHidden` and
+`FroggerSkips`) into a folder under `build/`. It never goes in the repo, and CI never uses it:
+
+    pytest -n auto -m "perf or uidisk or stall" --library=build/device-library
+    FROGGER_LIBRARY=build/device-library python3 tools/emupod/perf.py     # one guard on its own
+
+`pytest -m emupod --ata-hang 1` runs every emupod check with the disk hanging once at a random
+read (seed 1). `--stall-seed N` picks the stall guard's random moments.
+
+The speed numbers are deterministic. `tools/emupod/perf-baseline.json` keeps the last accepted
+ones and each action's budget, so a change in cost shows up as a diff. After a change that costs
+or saves instructions on purpose, run `python3 tools/emupod/perf.py --update` and commit the
+JSON. Your own library's baseline stays in `build/emupod-work/`. CI's job summary shows the table
+and any UI-thread disk I/O. A known failure is marked `xfail` (not strict) with the reason. When a
+fix lands, the test turns XPASS: then drop the mark.
+
+The emulator still can't show everything (the audio stops early, the disk is fast when it does
+answer). Before a release, go through [docs/device-checklist.md](docs/device-checklist.md) on a
+real iPod.
+
 ## Layout
 
 | Path | What |

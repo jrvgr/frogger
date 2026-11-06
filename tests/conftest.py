@@ -1,8 +1,13 @@
-"""pytest setup for tests/: the `firmware` marker's skips and the emupod checks' shared image.
+"""pytest setup for tests/: the `firmware` marker's skips, the emupod checks' shared image and
+the device-realism options (CONTRIBUTING.md, "Device realism").
 
     nix develop -c pytest                  # unit tests; the firmware ones skip without build/fw
     nix develop .#emu -c pytest -n auto    # everything, emupod checks included (CONTRIBUTING.md)
+    ... --library build/device-library     # perf/uidisk/stall on your own iTunesDB (never in CI)
+    ... --ata-hang 1                       # every emupod check with a random disk hang (seed 1)
 """
+import os
+import random
 import subprocess
 import sys
 import uuid
@@ -32,6 +37,14 @@ def missing(*paths):
 def pytest_addoption(parser):
     parser.addoption("--require-firmware", action="store_true",
                      help="fail, not skip, when a firmware or emupod test's files are missing (CI's emulator job)")
+    parser.addoption("--library", default=os.environ.get("FROGGER_LIBRARY", "generated"),
+                     help='the big library for the perf, uidisk and stall checks: "generated" (default) or a folder '
+                          "with an iTunesDB, e.g. build/device-library (sets FROGGER_LIBRARY)")
+    parser.addoption("--stall-seed", type=int, default=int(os.environ.get("EMUPOD_STALL_SEED", "1")),
+                     help="the stall checks' random seed (stall.py --seed)")
+    parser.addoption("--ata-hang", type=int, default=None, metavar="SEED",
+                     help="run every emupod check with the disk hanging once, at a random read for a random "
+                          "time (EMUPOD_ATA_HANG, seeded per check)")
 
 
 @pytest.hookimpl(trylast=True)  # after -m and -k have deselected
@@ -52,6 +65,31 @@ def pytest_configure(config):
         config.frogger_run = uuid.uuid4().hex
     else:
         config.frogger_run = config.workerinput.get("testrunuid", "worker")
+
+
+@pytest.fixture(autouse=True)
+def _ata_hang(request, monkeypatch):
+    """--ata-hang SEED: EMUPOD_ATA_HANG="skip,ms" for this test's emupod processes, the same for a
+    test on every run with that seed: the disk hangs at the skip-th read for ms (0: until reset)."""
+    seed = request.config.getoption("ata_hang")
+    if seed is not None and request.node.get_closest_marker("emupod"):
+        rng = random.Random("%d %s" % (seed, request.node.nodeid))
+        value = "%d,%d" % (rng.randint(0, 400), rng.choice([0, 2000, 5000, 12000]))
+        monkeypatch.setenv("EMUPOD_ATA_HANG", value)
+        print("EMUPOD_ATA_HANG=" + value)
+
+
+@pytest.fixture(scope="session")
+def library(request):
+    """The big library card (tools/emupod/library.py) for --library, made once per run; also sets
+    FROGGER_LIBRARY for the scripts."""
+    lib = request.config.getoption("library")
+    os.environ["FROGGER_LIBRARY"] = lib
+    sys.path.insert(0, str(ROOT / "tools/emupod"))
+    import library as lb
+    if lib != "generated" and not (ROOT / lib / "iTunesDB").exists() and not (Path(lib) / "iTunesDB").exists():
+        pytest.fail(f"--library {lib}: no iTunesDB there", pytrace=False)
+    return lb.card(lib)
 
 
 @pytest.fixture(scope="session")
