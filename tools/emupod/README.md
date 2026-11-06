@@ -44,6 +44,14 @@ this folder.
 | The disk coming back after it stops answering (SRST, re-init, retry) | `diskhang.py` |
 | Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto | `flash.py` |
 
+Device realism (`tests/test_device.py`, CONTRIBUTING.md): on a big library card (`library.py`),
+
+| Guard | Check |
+| --- | --- |
+| The speed budget: instructions per UI action, against stock | `perf.py` (`perf-baseline.json`) |
+| No disk I/O on the UI thread, per scenario | `uidisk.py` |
+| The UI answering while the disk is hung | `stall.py` |
+
 Shown in screenshots only, not checked yet: covers changing on Next (`artplay.py`), Jump by Letter
 (`letters.py`), album artists (`albumartist.py`), Add to Playlist (`playlists.py`), the Now Playing
 cycle (`npcycle.py`), the hold menu and queue step by step (`holdmenu.py`).
@@ -52,7 +60,8 @@ cycle (`npcycle.py`), the hold menu and queue step by step (`holdmenu.py`).
 
 - `ipod3g.py`: `Pod()`, the driver: boot, `press()`, `scroll()`, `wheel()`, `settle()`, `shot()`.
   `itdb.py`: iTunesDB records, for scripts that write their own database.
-- Cards: `mkcards.py`, `hmcard.py`, `mkart.py`, `mkresume.py`; `mkimage.py` makes the Frogger
+- Cards: `mkcards.py`, `hmcard.py`, `mkart.py`, `mkresume.py`, `library.py` (the big library:
+  generated, or yours with `FROGGER_LIBRARY=DIR`); `mkimage.py` makes the Frogger
   RAM image emupod boots; `checkart.py` reads a FroggerArt and draws it.
 - `screenshots.py`: the README's screenshots (`docs/screenshots/`), on a demo card it makes.
 - `probes/`: one-off reverse-engineering traces, kept for how things were found
