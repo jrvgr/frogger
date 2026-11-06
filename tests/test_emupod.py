@@ -20,6 +20,8 @@ pytestmark = pytest.mark.emupod
 def test_check(name, emupod_image):
     runtests.LOGS.mkdir(parents=True, exist_ok=True)
     _, code, secs = runtests.run(name)
+    if code == runtests.SKIP:
+        pytest.skip(f"{name}.py needs another build: " + (runtests.LOGS / f"{name}.log").read_text().strip()[-200:])
     if code:
         log = (runtests.LOGS / f"{name}.log").read_text(errors="replace")
         pytest.fail(f"{name}.py exited {code} after {secs:.0f} s; the end of its log:\n{log[-4000:]}", pytrace=False)

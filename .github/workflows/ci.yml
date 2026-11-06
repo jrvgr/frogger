@@ -233,11 +233,17 @@ jobs:
       # The checks run as Python processes of their own; coverage follows them (pyproject.toml).
       - name: Emulator tests
         run: nix develop .#emu -c pytest -v -n auto --durations=0 --require-firmware -m emupod --junitxml=build/results/emupod.xml --cov --cov-append --cov-report=
+      # debugrecord.py skips on the plain build above: a DEBUG=1 one for it alone.
+      - name: The debug record (a DEBUG=1 build)
+        run: |
+          nix develop .#emu -c make -C loader DEBUG=1
+          nix develop .#emu -c pytest -v --require-firmware -m emupod -k debugrecord --junitxml=build/results/emupod-debug.xml --cov --cov-append --cov-report=
       - name: Summary
         if: ${{ !cancelled() }}
         run: |
           python3 .github/scripts/report.py junit "Unit tests that need the firmware" build/results/firmware.xml
           python3 .github/scripts/report.py junit "Emulator checks" build/results/emupod.xml --checks
+          python3 .github/scripts/report.py junit "The debug record (DEBUG=1)" build/results/emupod-debug.xml --checks
           # Device realism (tests/test_device.py): the speed budget's table and UI-thread disk I/O
           shopt -s nullglob
           for f in build/emupod-work/perf-generated.md build/emupod-work/uidisk-generated-*.md; do

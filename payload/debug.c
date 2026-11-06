@@ -178,7 +178,10 @@ static void write_record(void)
     if (make_path(out_path, ITUN, "iPod_Control\\iTunes\\", "FroggerDebug") != 0
         || fw_create(out_path, out_file, 0, FW_DATA) != 0)
         return;
-    put("Frogger debug, boot "); dec(dbg->boot); flush();
+    /* "record 2": the whole-session record (notes, a 3400-entry trail). A
+     * file without it came from an older payload (a 96-byte line, the last
+     * 128 trail entries, no notes), not from blocks this one lost. */
+    put("Frogger debug, record 2, boot "); dec(dbg->boot); flush();
     if (dbg->kind) {
         put("crash: "); put(kinds[dbg->kind < 5 ? dbg->kind : 0]);
         put(" (kind "); dec(dbg->kind); put(")"); flush();
