@@ -1,7 +1,8 @@
 name: Release
 
 # Publishes the loader as a GitHub release: frogger-loader.bin (what tools/install.py installs), a
-# DEBUG=1 build that writes a crash record, and their checksums, after every CI check passes.
+# DEBUG=1 build that writes a crash record, tools/install.py (Crate fetches it with the loader), and
+# their checksums, after every CI check passes.
 # Only Frogger's own code is in them: Apple's firmware is fetched for the tests and never published.
 #
 # Two ways to start it:
@@ -80,12 +81,13 @@ jobs:
           nix develop -c make -C loader clean
           nix develop -c make -C loader
           cp build/loader/frogger-loader.bin frogger-loader.bin
-          sha256sum frogger-loader.bin frogger-loader-debug.bin > SHA256SUMS
+          cp tools/install.py install.py
+          sha256sum frogger-loader.bin frogger-loader-debug.bin install.py > SHA256SUMS
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           pre=()
           case "$TAG" in *-*) pre=(--prerelease);; esac
-          gh release create "$TAG" frogger-loader.bin frogger-loader-debug.bin SHA256SUMS \
+          gh release create "$TAG" frogger-loader.bin frogger-loader-debug.bin install.py SHA256SUMS \
             --verify-tag --title "Frogger $TAG" --generate-notes "${pre[@]}"
