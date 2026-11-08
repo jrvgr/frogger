@@ -6,7 +6,9 @@
  * then waits out its length. A click is divisor 0x64, length 0x64.
  * click_hook (hooks.S, at 0x13c6e8, where the divisor is loaded) asks
  * click_tone, which can mix a click into the music and have the task skip
- * the UART (Headphones), or both (Both). Speaker is Apple's.
+ * the piezo (Headphones), or both (Both). Speaker is Apple's. The piezo's
+ * sound is the task's pump (0x13c724-0x13c7c4), 0xaa bytes into the UART
+ * while a tone is on: skipping it means ending the tone (hooks.S).
  *
  * The music: the decoder (on the COP) writes s16 stereo into a ring at
  * 0x4449f80-0x4461980 (96768 bytes, uncached), up to [0x4001770c]; the sound
@@ -25,7 +27,7 @@
  * The click: about 1 kHz square for 4 ms, rounded off by a one-pole
  * low-pass (as the piezo's mass does), 10 ms with its ring-out, at 44.1 kHz
  * (other rates just play it a little higher or lower). Click Volume sets its
- * peak: about -30, -24 and -18 dBFS. */
+ * peak: about -18, -12 and -6 dBFS (quieter was lost under music on a device). */
 
 #include <stdint.h>
 #include "settings.h"
@@ -44,8 +46,8 @@
 #define CLICK_MAX_LEN   0x80            /* a tone this long or shorter is a click */
 #define PLAYING_US      3000            /* the FIQ runs every 7 frames (0.16 ms): waiting longer costs only a paused click */
 
-/* Peaks for Quiet, Medium, Loud: 32767 * 10^(-30/20, -24/20, -18/20). */
-static const int16_t click_peak[3] = { 1036, 2067, 4125 };
+/* Peaks for Quiet, Medium, Loud: 32767 * 10^(-18/20, -12/20, -6/20). */
+static const int16_t click_peak[3] = { 4125, 8231, 16423 };
 
 static int16_t click[CLICK_FRAMES];     /* peak 32767 */
 

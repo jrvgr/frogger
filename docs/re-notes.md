@@ -958,8 +958,11 @@ boundaries come from `push {..., lr}` prologues, so they are approximate.
   0 queue a tone, divisor `+0x14` and length `+0x18`, into a 16-entry ring; 1 flush) and plays
   each in turn at `0x13c6e8`: the divisor from `[r7 + 4 * r4]` into the second UART
   (`0xc000604c` = `0x80`, low byte to `+0x40`, high to `+0x44`, `+0x4c` = 3, `+0x48 |= 7`),
-  then waits the length (`[r6 + 4 * r4]`, added to `0x139148`'s clock). A wheel click is divisor
-  `0x64`, length `0x64`. Apple's Clicker Off sends no tones.
+  then, until the length is up (`[r6 + 4 * r4]`, added to `0x139148`'s clock, end at `[r5+12]`), pumps
+  `0xaa` bytes into the UART's transmit register (`0x13c724`–`0x13c7c4`, while `+0x54` bit 5 says
+  there's room): that byte stream at the divisor's baud rate is the sound. Skipping only the setup
+  leaves the pump running at the last divisor, and the piezo still clicks (seen on a device; emupod
+  doesn't model the UART's output). A wheel click is divisor `0x64`, length `0x64`. Apple's Clicker Off sends no tones.
 - **The sound path.** The COP's FIQ goes to IRAM `0x40000000`, which reads `0xcf00100c` and
   `0xcf001030` and runs the audio handler (`0x400177c0`) while bit 5 is set in both, round again
   until no source is left. Apple copies one of several handler variants there (`0x3443d4`... for
@@ -969,8 +972,9 @@ boundaries come from `push {..., lr}` prologues, so they are approximate.
   at the end; with nothing decoded it sends 12 zeros and counts an underrun at `0x4449f7c`. The
   decoder writes `0x1200`-byte blocks and stays 40 ms to 0.5 s ahead. Paused or stopped, the FIQ
   is masked (COP interrupt enable bit 5 off).
-- **Headphones.** `click_hook` asks `click_tone`; Headphones and Both add a 10 ms click (4 ms of a
-  1 kHz square through a one-pole low-pass, peak -30/-24/-18 dBFS by Click Volume) to the decoded
+- **Headphones.** `click_hook` asks `click_tone`; for Headphones it ends the tone at once and goes
+  back to the task's wait (`0x13c658`), so neither the setup nor the pump runs. Headphones and Both add a 10 ms click (4 ms of a
+  1 kHz square through a one-pole low-pass, peak -18/-12/-6 dBFS by Click Volume) to the decoded
   music 64 frames past the read pointer, before the codec, so it follows the headphone volume.
   It first waits up to 3 ms for the read pointer to move; if it doesn't (paused, stopped), or the
   pointers are out of the ring, or under 284 frames are decoded, the click goes to the piezo.
