@@ -8,4 +8,8 @@
 int disk_idle(uint32_t us);
 #define DISK_IDLE_US    500000      /* a refill's reads come back to back */
 
+/* 1 if a read has run for `us` without one ending (the drive stopped
+ * answering), or a re-init is pending. */
+int disk_stalled(uint32_t us);
+
 #endif

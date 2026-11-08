@@ -120,7 +120,9 @@ def make_card():
     lists = [itdb.mhyp("iPod", ids)] + [itdb.mhyp(n, [tid[s] for s in ss], master=False) for n, ss in PLAYLISTS.items()]
     db = itdb.mhbd([itdb.mhsd(1, itdb.mhl(b"mhlt", mhits)), itdb.mhsd(2, itdb.mhl(b"mhlp", lists))])
     kinds = list(dict.fromkeys(t[4] for t in tracks))
-    art = mkart.froggerart([kinds.index(t[4]) for t in tracks], [cover(k) for k in kinds])
+    from podinfo import Key                                      # mkart put tools/ on the path
+    art = mkart.froggerart([(Key(0x1000 + t[0], t[0], TONEA[1], t[3]), kinds.index(t[4])) for t in tracks],
+                           [cover(k) for k in kinds])
     for name, data in (("iTunesDB", db), ("FroggerArt", art)):
         tmp = WORK / f"demo-{name}"
         tmp.write_bytes(data)

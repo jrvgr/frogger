@@ -635,10 +635,15 @@ again).
 - **Emptying**: `0x465b0(lib)` is `0xa97bc`, `0x5aea8` ('pldm', 0 = go on) and `0xba31c` on
   `lib+0x48`, then `0x9d7c4`/`0x9d7ec`, which reset **the list on screen** (`lib+0x898`,
   `+0x89c`): a list gone back to afterwards is empty. Frogger calls the first three itself.
-- **Frogger's files for synced playlists**: `FroggerPlaylist_I` (I: the index in
-  `lib+0x870`), written like Apple's and read back the first time Playlists opens
-  (`playlist_load_saved`), into a list of its own first, so a missing or stale file changes
-  nothing. Playlists' title is pool constant `0x85`, string `0xfff2`, asked for as `0xfffffff2`.
+- **Frogger's files for synced playlists**: `FroggerPlaylist_<id>`, by the playlist's persistent
+  id (`mhyp+0x1c`: the loader copies `[sp+0xc8]`, `[sp+0xcc]` to the playlist object's `+0x14`,
+  `+0x18` at `0xc4370`), its songs by track key ([file-formats.md](file-formats.md)), written by
+  Frogger and read back the first time Playlists opens (`playlist_load_saved`): each key's track
+  record is appended with `0x363cc(list, track, 0)`, as Apple's reader `0xc5a90` does with
+  `0x7cb44(0x78d60(tracks, 0x26, 0, ref))`. Writing walks the playlist with `0x78d60(list, 1, 0, i)`
+  and `0x7cb44`. A playlist without an id gets `FroggerPlaylist_I` (I: the index in `lib+0x870`),
+  written and read like Apple's. Either goes into a list of its own first, so a missing or stale
+  file changes nothing. **Confirmed** in emupod (`dbid.py`). Playlists' title is pool constant `0x85`, string `0xfff2`, asked for as `0xfffffff2`.
 - **Playlists screen**: fn 188 (`0x758`) opens it (deferred fn 189: keys, screen `0x25d7`);
   Select is fn 190 (row, `.e2`, then fn 193 for On-The-Go or `0x76c` for a playlist), Menu
   fn 192, hold fn 191.
@@ -709,7 +714,8 @@ Songs, Now Playing; bytecode, native methods and the browse state per step) and 
 - **Track record**: `+0x24` title, `+0x28` artist, `+0x2c` album artist (falls back to artist),
   `+0x30` album, `+0x38` genre (pool keys); `+0x7c` track number (halfword, mhit `+0x2c`), `+0x7e`
   of how many; `+0x14` the database position + 2. **Not** the track id: `+0x1c` is 0 (the browse
-  loop writes it), so `track_hook` hands `hide.c` the mhit's id (`mhit+0x10`) as it loads.
+  loop writes it), and not the dbid either (`mhit+0x70` is never read), so `track_hook` hands
+  `tracks.c` the mhit header as it loads, for the keys of Frogger's files (`file-formats.md`).
 - **The popup's rows**: Menu `0x25ba` repointed (loader) to six items; `0x08df.a0(0x25ba, element,
   3, hidden)` hides one (`hidden` is `42`, the push the main menu's fn 30 uses; nil shows it), but
   it finds the list in the screen that's up, so it has to run after fn 26 has opened the popup
@@ -785,8 +791,11 @@ a bookmark instead; the end of a song played out (emupod's audio stops early).
 
 **For Crate**: on sync, read Play Counts' bookmark (entry `+8`) and write it to that track's mhit
 `+0x6c` (only for tracks of 20 minutes or more, or all: 2.3 ignores it for the rest), as iTunes
-does for audiobooks. Otherwise a sync loses every position (a new iTunesDB with another track
-count makes the old Play Counts stale).
+does for audiobooks. Otherwise a sync loses Play Counts' positions (a new iTunesDB with another
+track count makes the old Play Counts stale). Frogger also writes them by track key to
+`FroggerBookmarks` with Play Counts (`bookmarks_save`), and after a load of a database with another
+stamp puts them back into the long tracks that came without one, marking Play Counts to be written
+(`bookmarks_tick`; `dbid.py`, `file-formats.md`).
 
 ## Skips (**confirmed** in emupod)
 
@@ -816,7 +825,8 @@ Frogger (`payload/skips.c`): `skip_next_hook` (`0xb81d4`) counts the song playin
 `keep_hook` notes the song playing and its position (`skips_keep`), and `skip_pick_hook`
 (`0xb8eb4`) counts the song playing, or the noted one if nothing is (within 1 s), unless it's the
 song picked; `0xd9268`'s loads (by return address `0xd92bc`) don't count. A skip is 2 s to 20 s in.
-The skips go in `iPod_Control/iTunes/FroggerSkips` (`payload/skips.h`), saved only from `counts_hook`,
+The skips go in `iPod_Control/iTunes/FroggerSkips` (`payload/skips.h`, by track key:
+[file-formats.md](file-formats.md)), saved only from `counts_hook`,
 as Apple writes Play Counts, and read back after each database load like FroggerHidden. Apple writes
 Play Counts (`0xf4d6c`, from the event handler `0x58398`: events `'cprm'`, `'hcpu'`, `'plsp'`,
 `'prwp'`) a little after the song change too: in emupod the `'prwp'` 0.5 to 2 s after Next,

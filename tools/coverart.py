@@ -27,9 +27,10 @@ nix develop has it, or pip install pillow.
     tools/coverart.py /Volumes/IPOD --png covers.png        # also draw them, to look at the dithering
     tools/coverart.py /Volumes/IPOD --out FroggerArt        # write it somewhere else
 
-Run it again after every sync: the file is indexed by track position, so it is only right for
-the iTunesDB it was made from (the cover page shows a refresh arrow otherwise). Layout:
-payload/nowplaying.h; tools/emupod/checkart.py checks a file the way the payload reads it."""
+Run it again after a sync that adds songs: the file (version 2) names each song by its dbid (or
+track id, size and length), so songs that stay keep their covers through any app's sync, but new
+ones have none until it runs. Layout: docs/file-formats.md, payload/nowplaying.h;
+tools/emupod/checkart.py checks a file the way the payload reads it."""
 
 import argparse
 import io
@@ -45,7 +46,7 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from podinfo import Database, itunes  # noqa: E402
 
-SIZE, MAGIC, VERSION, NONE = 72, 0x41475246, 1, 0xffff
+SIZE, MAGIC, VERSION, NONE = 72, 0x41475246, 2, 0xffff
 ROW = (SIZE // 4 + 3) & ~3
 BYTES = ROW * SIZE
 GREYS = [(0xc6, 0xd0, 0xc0), (0x8c, 0x95, 0x88), (0x50, 0x56, 0x4e), (0x10, 0x12, 0x10)]    # 0 = background … 3 = black
@@ -228,8 +229,16 @@ def dither(data):
     return bytes(out)
 
 
-def froggerart(table, images):
-    head = struct.pack("<IHHIIII", MAGIC, VERSION, SIZE, len(table), len(images), BYTES, 0)
+def froggerart(entries, images):
+    """FroggerArt version 2: entries are (Key, image index), one per song with a cover."""
+    head = struct.pack("<IHHIIII", MAGIC, VERSION, SIZE, len(entries), len(images), BYTES, 0)
+    return head + b"".join(k.pack() + struct.pack("<HH", i, 0) for k, i in entries) + b"".join(images)
+
+
+def froggerart_v1(table, images):
+    """FroggerArt version 1 (still read by the iPod, for the iTunesDB it was made from only):
+    an image index (or NONE) per track position."""
+    head = struct.pack("<IHHIIII", MAGIC, 1, SIZE, len(table), len(images), BYTES, 0)
     t = b"".join(struct.pack("<H", i) for i in table)
     t += bytes(-(len(head) + len(t)) % 4)
     return head + t + b"".join(images)
@@ -404,8 +413,9 @@ def main(argv=None):
     table, images = build(a.ipod, db, picked, library, cover_files(a.covers))
     out = a.out or itunes(a.ipod, "FroggerArt")
     tmp = out + ".tmp"
+    entries = [(db.key(t), i) for t, i in zip(db.tracks, table) if i != NONE]
     with open(tmp, "wb") as f:
-        f.write(froggerart(table, images))
+        f.write(froggerart(entries, images))
     os.replace(tmp, out)
     with_cover = sum(i != NONE for i in table)
     print(f"wrote {out}: {len(images)} covers, {with_cover} of {len(table)} songs have one")

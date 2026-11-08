@@ -43,6 +43,7 @@ this folder.
 | The payload's memory stays free of Apple's heap | `heaptop.py` |
 | The disk coming back after it stops answering (SRST, re-init, retry) | `diskhang.py` |
 | Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto | `flash.py` |
+| Frogger's files after another app's sync (new ids, new order): hides, skips, covers, bookmarks, playlists; the old versions read | `dbid.py` |
 | Covers changing on Next and Previous | `artplay.py` |
 | The Now Playing cycle: the cover page, Apple's, scrubbing, rating and back | `npcycle.py` |
 | Jump by Letter, the letter in the title; Settings › Jump by Letter off | `letters.py` |

@@ -167,27 +167,31 @@ Apple's page, and the cover page is made at runtime by changing the live objects
   `0xda3cc(art)`. SetVisible's own repaint (`0xe0bc0`) only runs for objects with flag `0x10`,
   which the art doesn't have, and laying the View out again repaints only what moved.
 - **The file**: `iPod_Control/iTunes/FroggerArt`, written by Crate (`FroggerArt.swift`) at the end
-  of every sync, right after the iTunesDB, and deleted by every database write (`Syncer.write`),
-  since it's only right for the database it was made with. Layout in `payload/nowplaying.h`: a
-  24-byte header (`"FRGA"`, version 1, size 72, track count, image count, bytes per image), a u16
-  per track **position in the iTunesDB** (the image, or `0xffff`), then 72×72 2-bit images in
-  `BMap` rows (20 bytes per row, 1440 per image). An album's tracks share one image, and so do
-  identical pictures. Crate takes the library album's cover, or the picture embedded in the song
-  file on the iPod, scales it to fill the square and dithers it to four greys. How (levels,
-  brightness, contrast, midtones, sharpening, Floyd–Steinberg/Atkinson/ordered) is set in Crate's
-  Cover Studio (iPod page › Frogger card), which previews it on a mock of this page; the defaults
-  stretch the levels and use Floyd–Steinberg. `Crate --froggerart OUT` writes the file for the connected iPod to OUT
-  instead, and `tools/emupod/checkart.py OUT --tracks N --png x.png` checks it the way the
-  payload reads it and draws the covers.
-- **Why positions**: the firmware's track records don't keep the mhit id (`+0x1c` stays 0 on
-  real 2.3; `re-notes.md` and the Unicorn harness assumed otherwise). `track_hook` sees each
-  record with its position (`[sp+0x4bc]`). The records are allocated in blocks of 100, `0x1d0`
-  bytes apart within a block, and the blocks anywhere on the heap (**confirmed** in emupod with a
-  real 535-track database: six runs, at `0x1d4ea70`, `0x1d39eb0`, …), so `np_track_loaded` keeps
-  where each run starts (up to 256 runs, 2 KB) and `position_of` finds a record in them. The
-  first version assumed a single run; with the 2-track test database it worked, on a real iPod
-  every cover showed the "no cover" frame (a thin grey border). The payload also uses a file only if
-  its track count is the database's.
+  of every sync, right after the iTunesDB, or by `tools/coverart.py`. Layout in
+  [file-formats.md](file-formats.md#froggerart-the-covers) and `payload/nowplaying.h`: a 24-byte
+  header (`"FRGA"`, version 2, size 72, entry count, image count, bytes per image), then for
+  version 2 a 24-byte entry per song with a cover (its **track key**: dbid, track id, size, length;
+  and the image), then 72×72 2-bit images in `BMap` rows (20 bytes per row, 1440 per image). Version
+  1, still read, had a u16 per track **position in the iTunesDB** instead and fit only the database
+  it was made with. An album's tracks share one image, and so do identical pictures. Crate takes the
+  library album's cover, or the picture embedded in the song file on the iPod, scales it to fill the
+  square and dithers it to four greys. How (levels, brightness, contrast, midtones, sharpening,
+  Floyd–Steinberg/Atkinson/ordered) is set in Crate's Cover Studio (iPod page › Frogger card), which
+  previews it on a mock of this page; the defaults stretch the levels and use Floyd–Steinberg.
+  `Crate --froggerart OUT` writes the file for the connected iPod to OUT instead, and
+  `tools/emupod/checkart.py OUT --itunesdb iTunesDB --png x.png` checks it the way the payload reads
+  it and draws the covers.
+- **Finding a song's cover**: the firmware's track records keep neither the mhit id (`+0x1c` stays 0
+  on real 2.3; `re-notes.md` and the Unicorn harness assumed otherwise) nor the dbid. `track_hook`
+  sees each record with its position (`[sp+0x4bc]`) and mhit header, and `tracks.c` keeps both. The
+  records are allocated in blocks of 100, `0x1d0` bytes apart within a block, and the blocks
+  anywhere on the heap (**confirmed** in emupod with a real 535-track database: six runs, at
+  `0x1d4ea70`, `0x1d39eb0`, …), so `tracks.c` keeps where each run starts (up to 240 runs) and
+  `tracks_position` finds a record in them (past that, a search of its table). The first version
+  assumed a single run; with the 2-track test database it worked, on a real iPod every cover showed
+  the "no cover" frame (a thin grey border). For version 2 the cover task reads the file's table once
+  per database and keeps an image per position (`by_pos`); version 1 is used only if its track count
+  is the database's.
 - **The song now playing**: `0xbca48(record)` loads a track for playback. It runs from `0xb9170`
   when a song starts (play, Next, Prev) and from `0x94a5c` to preload the next one, so
   `play_hook` replaces the call at `0xb916c` (`bl 0xbca48`), notes that track, then continues into
@@ -200,9 +204,9 @@ Apple's page, and the cover page is made at runtime by changing the live objects
   just has no cover, that's all. When something went wrong the frog frowns, an icon in the bottom
   right says what, and a small digit in the bottom left which step (`WHY_*`): an SD card, a read
   failed (2 the file didn't open, 3 its header, 6 the song's index entry, 7 its image); a question
-  mark (1), the track isn't one `track_hook` saw load; a refresh arrow (5), the file was made for
-  another database (track count differs), so sync again; a warning (4), it isn't a FroggerArt this
-  payload reads. The card ones are tried again when Now Playing opens.
+  mark (1), the track isn't one `track_hook` saw load; a refresh arrow (5), a version 1 file made
+  for another database (track count differs), so sync again; a warning (4), it isn't a FroggerArt this
+  payload reads. A song a version 2 file doesn't name just has no cover. The card ones are tried again when Now Playing opens.
 - **The firmware's file calls** (**confirmed** from the iTunesDB parser `0xc54bc` and by use):
 
   | Call | Address | Arguments |
@@ -216,7 +220,8 @@ Apple's page, and the cover page is made at runtime by changing the live objects
 
 - **Testing**: `tools/emupod/mkart.py` puts a FroggerArt with test pictures (a gradient and a
   checkerboard) on a copy of the test card (`art-card.img`); `artplay.py` plays both songs and
-  checks the cover page shows each one's picture, pixel for pixel.
+  checks the cover page shows each one's picture, pixel for pixel. `dbid.py` checks each song keeps
+  its cover after a new iTunesDB with other track ids and order, and that a version 1 file still works.
 
 ## How the screen is put together (runtime)
 
