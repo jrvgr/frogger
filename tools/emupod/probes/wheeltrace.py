@@ -1,42 +1,16 @@
-"""What scrolling a list runs (for jump by letter). Builds letters-card.img: 60 songs whose titles
-and artists start with letters spread over the alphabet (all on TONEA.mp3), opens Music > Songs
+"""What scrolling a list runs (for jump by letter). Builds letters-card.img (letters.py's: 60 songs whose
+titles and artists start with letters spread over the alphabet, all on TONEA.mp3), opens Music > Songs
 and records three wheel clicks down: every bytecode step, every native method (entered from the
 VM's dispatcher, lr 0xa18a8) and every function entry that doesn't also run while idle.
 Writes wheeltrace.json ({"scroll": [[t, pc, r0, r1, r2, r3, lr, vm_pc], ...]}) and wt_*.png.
 
     wheeltrace.py [--card-only]"""
 import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # noqa: E401,E702  tools/emupod: ipod3g, hmcard, itdb
-import json, shutil, struct, subprocess, sys
-from pathlib import Path
+import json
 from ipod3g import Pod, W
+from letters import CARD as card, card as make_card
 
-card = W + "/letters-card.img"
-WORDS = ["Aerial", "Alpine", "Amber", "Bassline", "Blue Notes", "Breaks", "Circles", "Cold Front",
-         "Daybreak", "Deep Space", "Echoes", "Elevate", "Fade", "Fractal", "Glide", "Gravity", "Horizon",
-         "Hydro", "Inner City", "Island", "Jazz Note", "Jungle", "Kinetic", "Lagoon", "Liquid", "Lunar",
-         "Midnight", "Mirage", "Nebula", "Nightfall", "Ocean", "Orbit", "Pulse", "Quasar", "Rainfall",
-         "Reflex", "Rollers", "Silhouette", "Skyline", "Solar", "Spectrum", "Tidal", "Timeless",
-         "Undertow", "Urban", "Velvet", "Vortex", "Warmth", "Waves", "Xenon", "Yearning", "Zenith",
-         "Zero G", "Atlantis", "Bloom", "Cascade", "Drift", "Ember", "Flow", "Glow"]
-ARTISTS = ["Alix Perez", "Bukem", "Calibre", "Doc Scott", "Etherwood", "Fracture", "Goldie",
-           "Hybris", "Intense", "Jubei", "Klute", "Lenzman", "Marcus Intalex", "Nookie", "Omni Trio",
-           "Peshay", "Qumulus", "Random Movement", "Seba", "Tokyo Prose", "Utah Jazz", "Villem",
-           "Wax Doctor", "Xtrah", "Youngsta", "Zero T"]
-
-import itdb as mkdb
-shutil.copy(W + "/music-card.img", card)
-tracks = [(200 + i, {"title": w, "artist": ARTISTS[i % len(ARTISTS)], "album": "Album %d" % (i % 7),
-                     "genre": "Test", "location": ":iPod_Control:Music:F00:TONEA.mp3"}, 2881119, 180000, 128)
-          for i, w in enumerate(WORDS)]
-db = mkdb.mhbd([mkdb.mhsd(1, mkdb.mhl(b"mhlt", [mkdb.mhit(*t) for t in tracks])),
-                mkdb.mhsd(2, mkdb.mhl(b"mhlp", [mkdb.mhyp("iPod", [t[0] for t in tracks])]))])
-mbr = Path(card).read_bytes()[:512]
-start = struct.unpack_from("<I", mbr, 0x1be + 24)[0]
-tmp = Path(card).with_suffix(".iTunesDB"); tmp.write_bytes(db)
-subprocess.run(["nix", "shell", "nixpkgs#mtools", "-c", "mcopy", "-o", "-i", f"{card}@@{start * 512}",
-                str(tmp), "::/iPod_Control/iTunes/iTunesDB"], check=True)
-tmp.unlink()
-print("wrote", card, len(tracks), "songs")
+make_card()
 if "--card-only" in sys.argv:
     sys.exit()
 
