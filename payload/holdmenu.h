@@ -28,12 +28,14 @@
 #define HM_STR_REMOVE   0x3f1c
 #define HM_STR_CLEAR    0x3f1d
 #define HM_STR_SHOW     0x3f1f      /* Hide's row on hidden songs (0x3f1e: settings.h's) */
+#define HM_STR_AFTER    0x3f28      /* Play Album Next's row on albums: Play After Album */
 /* Quick settings (hold Menu): rows 0-2's labels, which show the setting's
  * value ("Shuffle: Songs"), and row 3's. Its title is HM_STR_TITLE's id. */
 #define HM_STR_QS_SHUFFLE 0x3f29
 #define HM_STR_QS_REPEAT  0x3f2a
 #define HM_STR_QS_TIMER   0x3f2b
 #define HM_STR_QS_SLEEP   0x3f2c
+#define HM_STR_QS_CLICKER 0x3f34    /* row 4: "Clicker: Headphones" (0x3f2d-0x3f33: settings.h's) */
 
 /* The popup's list, Menu 0x25ba (Cancel, Confirm), which the loader points at
  * hm_popup: Apple's two items and four more. Its bundle index entry. */

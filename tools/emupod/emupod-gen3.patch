@@ -223,10 +223,30 @@ index e76af14..7acaeb6 100644
              self.err = 0x01;
          } else if c == 0xec {
 diff --git a/rust/pp5002/src/lib.rs b/rust/pp5002/src/lib.rs
-index d03a3ed..6a730fa 100644
+index d03a3ed..9a463b7 100644
 --- a/rust/pp5002/src/lib.rs
 +++ b/rust/pp5002/src/lib.rs
-@@ -299,6 +299,14 @@ pub struct Shared {
+@@ -49,6 +49,10 @@ const COP_INT_DIS: u32 = 0xcf00_1038;
+ const AUDIO_IRQ: u32 = 5;
+ const AUDIO_STATUS: u32 = 0xc000_2404;
+ const AUDIO_OUT: u32 = 0xc000_2440;
++/// 2.3's I2S FIFO (Rockbox's IISFIFO_WR) and its config/status word (IISFIFO_CFG: free slots from bit 23, the
++/// playback FIQ reads (v >> 23) & 14), beside the 0xc00024xx pair the 1.x firmware feeds
++const IIS_FIFO_WR: u32 = 0xc000_2540;
++const IIS_FIFO_CFG: u32 = 0xc000_251c;
+ const UNDERRUNS: u32 = 0x0454_731c;
+ const COP_ID: u32 = 0xaaaa_aaaa;
+ const CPU_ID: u32 = 0x5555_5555;
+@@ -169,6 +173,8 @@ pub struct Audio {
+     pub n: u64,
+     pub next: Option<u64>,
+     pub fiqs: u64,
++    /// the audio FIQ's source bit, from its delivery until the handler writes the FIFO (2.3's dispatcher)
++    pub irq: bool,
+     pub late: u64,
+     pub samples: Vec<i16>,
+     pub started: Vec<u64>,
+@@ -299,6 +305,14 @@ pub struct Shared {
      pub fw: Option<fw::Engine>,
      /// the storage controller's configuration word, 0xc0003024 (bit 0x40 always reads set: the drive answers)
      ide_cfg: u32,
@@ -241,7 +261,7 @@ index d03a3ed..6a730fa 100644
  }
  
  impl Audio {
-@@ -514,7 +522,14 @@ impl Shared {
+@@ -514,7 +528,14 @@ impl Shared {
      fn regval(&mut self, a: u32) -> u32 {
          if ata::is_taskfile(a) || a == ata::ALT {
              let now = self.now();
@@ -257,7 +277,20 @@ index d03a3ed..6a730fa 100644
          }
          if a == USEC_TIMER {
              if self.cfg.slice_clock && self.sub < self.qlen.saturating_sub(1) {
-@@ -565,7 +580,7 @@ impl Shared {
+@@ -534,6 +555,12 @@ impl Shared {
+         if a == 0xcf00_1020 && self.cfg.irq_mask && !self.cfg.irq_mask_raw && self.who == Who::Cpu {
+             return self.pending & self.cpu_en;
+         }
++        // 2.3's coprocessor FIQ (IRAM 0x40000000) takes the sound only when bit 5 (AUDIO_IRQ) is set both in its
++        // status (0xcf00100c) and in its enabled sources (0xcf001030), and goes round again until no source is
++        // left: the bit stands from the FIQ until the handler feeds the FIFO (AUDIO_OUT), as a FIFO below its mark.
++        if self.who == Who::Cop && (a == 0xcf00_100c || a == 0xcf00_1030) && self.audio.on && self.audio.irq {
++            return self.pending | 1 << AUDIO_IRQ;
++        }
+         if matches!(a, 0xcf00_1000 | 0xcf00_1010 | 0xcf00_1020 | 0xcf00_1030) {
+             return self.pending;
+         }
+@@ -565,7 +592,7 @@ impl Shared {
              0xc400_0000 => CPU_ID,
              // The interrupt latch and the written bits are modelled for a machine booting from its chip (the bootloader and the disk-mode
              // program wait on the latch); the firmware-in-DRAM machine keeps the constant its recordings were made with.
@@ -266,7 +299,27 @@ index d03a3ed..6a730fa 100644
              0xc000_3024 => (self.ide_cfg & !0x30) | 0x40 | if self.ata.intrq { 0x10 } else { 0 },
              _ => 0,
          }
-@@ -751,6 +766,8 @@ impl Shared {
+@@ -602,6 +629,9 @@ impl Shared {
+             if a == AUDIO_STATUS {
+                 return 16 << 16;
+             }
++            if a == IIS_FIFO_CFG {
++                return 14 << 23;
++            }
+             if a == SIGNAL {
+                 self.sig_taken += 1;
+                 self.pending &= !(1 << SIGNAL_IRQ);
+@@ -737,7 +767,8 @@ impl Shared {
+             self.sig_stat |= val;
+         } else if a == MBX_CLR && self.has_cop {
+             self.sig_stat &= !val;
+-        } else if a == AUDIO_OUT && self.has_cop {
++        } else if (a == AUDIO_OUT || a == IIS_FIFO_WR) && self.has_cop {
++            self.audio.irq = false;
+             let v = (val >> 16) & 0xffff;
+             self.audio.samples.push(v as u16 as i16);
+         } else if (0xc000_8000..=0xc000_80ff).contains(&a) {
+@@ -751,6 +782,8 @@ impl Shared {
              self.ata.write(a, val, now);
          } else if a == ata::ALT {
              self.ata.control(val);
@@ -275,7 +328,7 @@ index d03a3ed..6a730fa 100644
          } else if a == 0xcf00_5030 && val & 4 != 0 && self.flash.is_some() {
              // the system reset Apple's updater asks for when it has rewritten the chip (0x28007afc)
              self.reset_req = true;
-@@ -1116,6 +1133,15 @@ impl Bus for Shared {
+@@ -1116,6 +1149,15 @@ impl Bus for Shared {
      fn stop(&self) -> bool {
          self.stop_now
      }
@@ -291,7 +344,7 @@ index d03a3ed..6a730fa 100644
      #[inline(always)]
      fn skip_enabled(&self) -> bool {
          self.cfg.skip_loops
-@@ -1199,6 +1225,9 @@ pub struct Machine {
+@@ -1199,6 +1241,9 @@ pub struct Machine {
      pub hook_log: Vec<(u64, u32, [u32; 16], u32)>,
      /// With (reg, offset): each hook entry also records the word at r[reg] + offset (a message's type word, say); 0 if unmapped.
      pub hook_peek: Option<(usize, u32)>,
@@ -301,7 +354,16 @@ index d03a3ed..6a730fa 100644
      pub cop_log: Vec<(u32, u32)>,
      pub s: Shared,
      pub cpu: Core<Shared>,
-@@ -1315,6 +1344,10 @@ impl Machine {
+@@ -1255,7 +1300,7 @@ impl Machine {
+             ata,
+             lcd_log: Vec::new(),
+             lcd_count: 0,
+-            audio: Audio { on: false, t0: 0, n: 0, next: None, fiqs: 0, late: 0, samples: Vec::new(), started: Vec::new(), fpf, due: 0, seen: 0, taken: 0 },
++            audio: Audio { on: false, t0: 0, n: 0, next: None, fiqs: 0, irq: false, late: 0, samples: Vec::new(), started: Vec::new(), fpf, due: 0, seen: 0, taken: 0 },
+             cop_asleep: false,
+             cop_sleeps: 0,
+             cop_wakes: 0,
+@@ -1315,6 +1360,10 @@ impl Machine {
              mmap: [0; 12],
              low_flash: false,
              ide_cfg: 0,
@@ -312,7 +374,7 @@ index d03a3ed..6a730fa 100644
              reset_req: false,
              resets: 0,
              fw: None,
-@@ -1338,10 +1371,12 @@ impl Machine {
+@@ -1338,10 +1387,12 @@ impl Machine {
              Some(v) if s.backlight_ok && osos.len() >= DEFAULT_VOL_AT + 4 && word(DEFAULT_VOL_AT) == DEFAULT_VOL_INSN => Some(v.min(127)),
              _ => None,
          };
@@ -327,7 +389,7 @@ index d03a3ed..6a730fa 100644
          m.cpu.cpu.pc = entry;
          m.cop.cpu.pc = entry;
          if has_cop && chip.is_some() {
-@@ -1477,7 +1512,11 @@ impl Machine {
+@@ -1477,7 +1528,11 @@ impl Machine {
              let mut done = 0u64;
              while done < count {
                  let pc = self.cpu.cpu.pc;
@@ -340,7 +402,7 @@ index d03a3ed..6a730fa 100644
                      let peek = match self.hook_peek {
                          Some((reg, off)) => { let a = self.cpu.cpu.r[reg].wrapping_add(off); self.s.rd(a, 4) }
                          None => 0,
-@@ -1707,6 +1746,38 @@ impl Machine {
+@@ -1707,6 +1762,38 @@ impl Machine {
          took
      }
  
@@ -379,7 +441,15 @@ index d03a3ed..6a730fa 100644
      /// Deliver the timer tick if one is due and interrupts are enabled.
      pub fn tick(&mut self) -> bool {
          if !self.s.tick_due || !self.inject(11) {
-@@ -1785,6 +1856,7 @@ impl Machine {
+@@ -1723,6 +1810,7 @@ impl Machine {
+             return false;
+         }
+         self.cop.cpu.fiq(&mut self.s);
++        self.s.audio.irq = true;
+         self.s.cop_asleep = false;
+         let a = &mut self.s.audio;
+         let wrote = (a.samples.len() - a.seen) / 2;
+@@ -1785,6 +1873,7 @@ impl Machine {
                  }
              }
          }
@@ -387,7 +457,7 @@ index d03a3ed..6a730fa 100644
          if self.s.cfg.irq_mask && self.s.pending & self.s.cpu_en & self.s.gpio_en_bit != 0 && self.cpu.cpu.cpsr & armcore::BIT_I == 0 {
              let took = self.cpu.cpu.irq(&mut self.s);
              self.s.irqs += took as u64;
-@@ -1792,6 +1864,7 @@ impl Machine {
+@@ -1792,6 +1881,7 @@ impl Machine {
          let ipus = self.s.cfg.ipus;
          let w0 = if self.watch_on { self.s.rd(self.watch_addr, 4) } else { 0 };
          self.run_cpu(q * ipus);
@@ -395,7 +465,7 @@ index d03a3ed..6a730fa 100644
          if self.watch_on && self.s.rd(self.watch_addr, 4) != w0 {
              if self.watch_log.len() < 4000 {
                  let v = self.s.rd(self.watch_addr, 4);
-@@ -1934,7 +2007,7 @@ impl Machine {
+@@ -1934,7 +2024,7 @@ impl Machine {
  
      /// Run from reset until the first full frame is drawn, then let the menu become input-ready.
      pub fn boot(&mut self) -> u32 {
@@ -404,7 +474,7 @@ index d03a3ed..6a730fa 100644
          for _ in 0..3000 {
              self.run();
              if self.s.lcd_count > FRAME - 1 {
-@@ -1976,6 +2049,11 @@ impl Machine {
+@@ -1976,6 +2066,11 @@ impl Machine {
              }
              self.slice();
          }

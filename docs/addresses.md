@@ -87,6 +87,7 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 | `0xc788c` | `0xe92d47fc` `push {r2-r10, lr}` | `disk_read_hook` | B | (calls `0xc7890`) | First instruction of the ATA read `0xc788c(ata, unit, lba, buf, count)`: runs it again, up to 3 tries in all, while it fails with `ata+0x1e0` set | `hooks.S` | confirmed (emupod) | [The disk that stops answering][disk] |
 | `0x9dbac` | `0xe5940190` `ldr r0, [r4, #400]` | `flash_id_hook` | BL | | ATA dispatcher `0x9da1c`, op `0xEC`, as the IDENTIFY ends (`r4` the ATA object, error at `+0x190`, the 512 bytes at `[+0x17c]`): keep words 0 and 217 and the model for Auto | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
 | `0x57820` | `0xe92d4010` `push {r4, lr}` | `flash_hold_hook` | B | `0x57824` | First instruction of the disk arbiter's `hold(client, ms)`: with Flash Storage on, `ms` is cut to 1000 | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
+| `0x13c6e8` | `0xe7970104` `ldr r0, [r7, r4, lsl #2]` | `click_hook` | BL | `0x13c6ec`, or `0x13c710` past the UART writes | The piezo task starting its next tone (`r0` the divisor, `r1` its length; a click is `0x64`, `0x64`): Headphones mixes a click into the music and skips the piezo, Both does both | `clicker.c` | confirmed (emupod) | [The clicker][clicker] |
 
 Other patches, in `loader/patches.c` (bytes, not hooks):
 
@@ -222,6 +223,8 @@ Not called, but where the hooks sit or what they stand in for.
 | `0x43580c` | The UI object (bytecode `0x08eb`; methods at `0x1bd808 + 4 * selector`, `.e9` at `0x1bdbac`). `re-notes.md` calls it `0x08df` | `queue.c`, `playlist.c`, `letters.c` | confirmed (emupod) | [On-The-Go and the queue][otg], [The hold menu][hm] |
 | `lib+0x58`, `+0x5c`, `+0x60`, `+0x64`; `+0x68…0x868` | Browse filters (genre, artist, composer, album; `-1` All) and their names | `browse.c` | confirmed (emupod) | [Browsing the Music lists][browse] |
 | `lib+0x86c`; `lib+0x878…0x89c` | Browse level; the level arrays and counts (genres, artists, composers, albums, songs) | `browse.c` | confirmed (emupod) | [Browsing the Music lists][browse] |
+| `0x4449f80`–`0x4461980`; `0x40017704`, `0x4001770c` | The decoded-music ring (s16 stereo, uncached, 96768 bytes) the sound FIQ plays from; its read pointer (the FIQ's) and write pointer (the decoder's, on the COP, blocks of `0x1200`) | `clicker.c` | confirmed (emupod) | [The clicker][clicker] |
+| `0xc0006040`–`0xc000604c`; `0xc0002540`, `0xc000251c` | The piezo's UART (divisor `+0x40`/`+0x44`, LCR `+0x4c`, `+0x48`); 2.3's I2S FIFO and its free count (`(v >> 23) & 14`) | `clicker.c` | confirmed (emupod) | [The clicker][clicker] |
 | `ui+0x12f8…0x1308`, `+0x1618…0x1624`, `+0x168c` | Builders' cached counts; rows picked; mode | `browse.c` | confirmed (emupod) | [Browsing the Music lists][browse] |
 | track record `+0x30`, `+0x7c` | Album (pool key); track number (halfword) | `browse.c` | confirmed (emupod) | [Browsing the Music lists][browse] |
 | `[lib+0x3c]` = `0x93c20` | The "started playing" callback (posts `0x3300001d`) | `queue.c` | confirmed (emupod) | [How songs start playing][play] |
@@ -416,3 +419,4 @@ The other hex constants in `payload/`, `loader/` and `tools/mkpayload.py`: instr
 [covers]: nowplaying.md#covers-confirmed-in-emupod-and-on-crates-output
 [disk]: power-and-emupod.md#part-c-the-disk-that-stops-answering-confirmed-in-emupod
 [flash]: power-and-emupod.md#part-d-flash-storage-working-in-emupod
+[clicker]: re-notes.md#the-clicker-confirmed-in-emupod

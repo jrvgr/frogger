@@ -16,6 +16,10 @@
  *   through it by itself. When the queue runs out, playback goes back to the
  *   list it left, with the song after the one the queue cut in after.
  * - Already playing from the queue: the songs just join its end.
+ * - "Play After Album" (queue_add_after_album) arms it the same way, but
+ *   the queue waits (q.wait_album) while Apple's next song is on the same
+ *   album as the one playing: it cuts in once the album ends (or Apple has
+ *   nothing after). Songs queued while it waits join it, so they wait too.
  *
  * Played songs stay in the list but behind q.next; once nothing in it is
  * playing or waiting, the next add empties it first. Starting another list
@@ -44,6 +48,8 @@
 #define PLAYER_LIST     (0x2a4 / 4)
 #define PLAYER_ITEM     (0x2a8 / 4)
 #define ITEM_KEY        (0x10 / 4)
+#define ITEM_TRACK      (0x20 / 4)
+#define TRACK_ALBUM     (0x30 / 4)      /* the album's string-pool key */
 
 #define TCMD_INT(n)     (((n) << 1) | 1)
 
@@ -75,6 +81,7 @@ static struct {
     uint32_t ret_list;
     uint32_t ret_key;   /* the item the queue cut in after */
     uint32_t jump;      /* Up Next's pick: queue_next answers with song jump - 1 */
+    uint32_t wait_album;        /* armed, but only once the album playing ends */
     int any_removed;
     uint8_t removed[QUEUE_MAX / 8];     /* by the queue's index: taken out in Up Next */
 } q;
@@ -196,8 +203,10 @@ void queue_added(uint32_t lib, uint32_t first)
     if (word(cur, 0) == q.list)
         return;
     /* A queue already waiting keeps its place, unless it was emptied under it. */
-    if (!q.armed || q.next >= first)
+    if (!q.armed || q.next >= first) {
         q.next = first;
+        q.wait_album = 0;       /* a fresh queue: cuts in after this song */
+    }
     q.armed = 1;
 }
 
@@ -222,6 +231,14 @@ static void set_source(uint32_t from, uint32_t to)
 
     if (lib && word(lib, LIB_SOURCE) == from)
         ((volatile uint32_t *)lib)[LIB_SOURCE] = to;
+}
+
+/* Whether items a and b are songs of the same album. */
+static int same_album(uint32_t a, uint32_t b)
+{
+    uint32_t ta = a ? word(a, ITEM_TRACK) : 0, tb = b ? word(b, ITEM_TRACK) : 0;
+
+    return ta && tb && word(ta, TRACK_ALBUM) == word(tb, TRACK_ALBUM);
 }
 
 /* 0xb7b00(player, list, key, flags): the item to play after the one with
@@ -277,6 +294,12 @@ uint32_t queue_next(uint32_t player, uint32_t list, uint32_t key, uint32_t flags
         q.armed = 0;            /* cleared since */
         return 0;
     }
+    if (q.wait_album) {
+        item = queue_next_orig(player, list, key, flags);
+        if (same_album(item, cur))
+            return item;        /* the album goes on */
+        q.wait_album = 0;
+    }
     q.resume = 1;
     q.ret_list = list;
     q.ret_key = key;
@@ -314,23 +337,46 @@ uint32_t queue_vm(uint32_t pc, uint32_t vm)
 #define db_begin    ((void (*)(uint32_t db))0xa5054)
 #define db_end      ((void (*)(uint32_t db))0xef76c)
 
-void queue_add_items(uint32_t src, const uint32_t *idx, unsigned n)
+/* Items idx[] of src (idx 0: all of them, in playlist order) onto the queue. */
+static void add_from(uint32_t lib, uint32_t src, const uint32_t *idx, unsigned n)
 {
-    uint32_t lib = library(), db, first;
+    uint32_t db = word(lib, 0x868 / 4), first;
     unsigned i;
 
-    queue_begin_add();
-    if (!lib || !q.otg || !n) {
-        queue_end_add();
-        return;
-    }
-    db = word(lib, 0x868 / 4);
     for (i = 0; i < n; i++) {
         first = list_count(q.list);
         db_begin(db);
-        append_item(list_item(src, list_key(lib), 0, idx[i]), q.list, 0, 0);
+        append_item(idx ? list_item(src, list_key(lib), 0, idx[i]) : list_item(src, 1, 0, i), q.list, 0, 0);
         db_end(db);
         queue_added(lib, first);
+    }
+}
+
+void queue_add_items(uint32_t src, const uint32_t *idx, unsigned n)
+{
+    uint32_t lib = library();
+
+    queue_begin_add();
+    if (lib && q.otg && n)
+        add_from(lib, src, idx, n);
+    queue_end_add();
+}
+
+/* Play After Album: all of playlist src's songs, played once the album
+ * playing ends. With songs already waiting they join those (and wait as
+ * those do); with the queue playing, its end; with nothing playing, now. */
+void queue_add_after_album(uint32_t src)
+{
+    uint32_t lib = library(), cur, n;
+    int fresh;
+
+    queue_begin_add();
+    if (lib && q.otg && src && (n = list_count(src)) != 0) {
+        cur = word(word(word(lib, 0), 1), PLAYER_ITEM);
+        fresh = cur && word(cur, 0) != q.list && !(q.armed && q.next < list_count(q.list));
+        add_from(lib, src, 0, n);
+        if (fresh && q.armed)
+            q.wait_album = 1;
     }
     queue_end_add();
 }

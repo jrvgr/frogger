@@ -94,10 +94,27 @@ unsigned frogger_flash_mode(void)
     return v <= FLASH_ON ? v : FLASH_OFF;
 }
 
+/* Apple's Clicker: Off, or where it clicks (clicker.c). */
+static uint32_t clicker_value(uint32_t flags)
+{
+    uint32_t v = (flags & FROGGER_PREF_PLACE) >> FROGGER_PREF_PLACE_SHIFT;
+
+    if (!(flags & FROGGER_PREF_CLICKER))
+        return SETTING_OFF;
+    return v == CLICK_PHONES ? FROGGER_STR_PHONES : v == CLICK_BOTH ? FROGGER_STR_BOTH : FROGGER_STR_SPEAKER;
+}
+
 /* The string id of an item's value ("On"/"Off"), or 0 when it isn't ours. */
 uint32_t setting_value(uint32_t item, uint32_t settings)
 {
     uint32_t bit = item_bit(item);
+
+    if (item == SETTING_CLICKER)
+        return clicker_value(prefs_flags(library_of(settings)));
+    if (item == FROGGER_ITEM_VOLUME) {
+        uint32_t v = (prefs_flags(library_of(settings)) & FROGGER_PREF_VOLUME) >> FROGGER_PREF_VOLUME_SHIFT;
+        return v == CLICK_LOUD ? FROGGER_STR_LOUD : v == CLICK_MEDIUM ? FROGGER_STR_MEDIUM : FROGGER_STR_QUIET;
+    }
 
     if (item == FROGGER_ITEM_FLASH) {
         uint32_t v = (prefs_flags(library_of(settings)) & FROGGER_PREF_FLASH) >> FROGGER_PREF_FLASH_SHIFT;
@@ -161,6 +178,40 @@ static int timer_set(uint32_t lib, const uint16_t *msg, uint32_t settings)
     return 1;
 }
 
+/* Apple's Clicker row, Select: Off, Speaker, Headphones, Both, Off. The
+ * row's function (fn 401) sends the value it wants, the other one of On and
+ * Off (the toggle message 0x282f too is taken). Off and On go through Apple's
+ * own setter (its case at 0xdb348: obj+0x33 and prefs bit 0, and whatever
+ * else it does); the place is ours, bits 30-31. Our own calls into Apple's
+ * setter come back here (clicker_inside) and go on to Apple's. */
+static int clicker_inside;
+
+static int clicker_set(uint32_t lib, const uint16_t *msg, uint32_t settings)
+{
+    static uint16_t value;
+    uint32_t flags = prefs_flags(lib), place = (flags & FROGGER_PREF_PLACE) >> FROGGER_PREF_PLACE_SHIFT;
+    int on = (flags & FROGGER_PREF_CLICKER) != 0;
+
+    if (clicker_inside)
+        return 0;
+    if (!(*msg == SETTING_TOGGLE || (on && *msg == SETTING_OFF) || (!on && *msg == SETTING_ON)))
+        return 0;                       /* On while On, Off while Off: Apple's */
+    if (!on) {
+        prefs_set_flags(lib, flags & ~FROGGER_PREF_PLACE);     /* Speaker */
+        value = SETTING_ON;
+    } else if (place < CLICK_BOTH) {
+        prefs_set_flags(lib, (flags & ~FROGGER_PREF_PLACE) | (place + 1) << FROGGER_PREF_PLACE_SHIFT);
+        return 1;
+    } else {
+        prefs_set_flags(lib, flags & ~FROGGER_PREF_PLACE);
+        value = SETTING_OFF;
+    }
+    clicker_inside = 1;
+    apple_setter(settings, SELECTOR_PRID, SETTING_CLICKER, &value);
+    clicker_inside = 0;
+    return 1;
+}
+
 /* `msg` is what Apple's setter gets: the toggle message or a value's string
  * id. Returns 0 when the item isn't ours. */
 int setting_set(uint32_t item, const uint16_t *msg, uint32_t settings)
@@ -170,6 +221,21 @@ int setting_set(uint32_t item, const uint16_t *msg, uint32_t settings)
 
     if (item == SETTING_TIMER)
         return timer_set(library_of(settings), msg, settings);
+    if (item == SETTING_CLICKER)
+        return clicker_set(library_of(settings), msg, settings);
+    if (item == FROGGER_ITEM_VOLUME) {      /* Select steps Quiet, Medium, Loud */
+        uint32_t v;
+
+        lib = library_of(settings);
+        flags = prefs_flags(lib);
+        v = (flags & FROGGER_PREF_VOLUME) >> FROGGER_PREF_VOLUME_SHIFT;
+        if (*msg == SETTING_TOGGLE)
+            v = v >= CLICK_LOUD ? CLICK_QUIET : v + 1;
+        else
+            v = *msg == FROGGER_STR_LOUD ? CLICK_LOUD : *msg == FROGGER_STR_MEDIUM ? CLICK_MEDIUM : CLICK_QUIET;
+        prefs_set_flags(lib, (flags & ~FROGGER_PREF_VOLUME) | v << FROGGER_PREF_VOLUME_SHIFT);
+        return 1;
+    }
     if (item == FROGGER_ITEM_FLASH) {        /* Select steps Off, Auto, On */
         uint32_t v;
 

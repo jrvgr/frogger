@@ -686,3 +686,18 @@ flash_hold_hook:
     ldr     pc, =0x57824
 
     .ltorg
+
+/* 0x13c6e8 in the piezo task, as it starts the next tone (was: ldr r0,
+ * [r7, r4, lsl #2], the tone's divisor; r1 still holds its length). If
+ * click_tone (clicker.c) says so, the UART writes up to 0x13c710 are skipped:
+ * the task then waits the tone's length in silence. */
+    .global click_hook
+click_hook:
+    ldr     r0, [r7, r4, lsl #2]
+    push    {r0, r1, r2, r3, r12, lr}
+    bl      click_tone
+    cmp     r0, #0
+    pop     {r0, r1, r2, r3, r12, lr}
+    addne   lr, lr, #(0x13c710 - 0x13c6ec)
+    bx      lr
+

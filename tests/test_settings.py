@@ -58,15 +58,17 @@ class SettingsTest(unittest.TestCase):
         for name in ("FROGGER_ITEM_HIDDEN", "FROGGER_STR_HIDDEN", "FROGGER_ITEM_LETTERS", "FROGGER_STR_LETTERS",
                      "FROGGER_ITEM_RESUME", "FROGGER_STR_RESUME"):
             self.assertNotIn(self.k[name], used, name)
-        for name in ("FROGGER_ITEM_FLASH", "FROGGER_STR_FLASH", "FROGGER_STR_AUTO"):
+        for name in ("FROGGER_ITEM_FLASH", "FROGGER_STR_FLASH", "FROGGER_STR_AUTO", "FROGGER_ITEM_VOLUME", "FROGGER_STR_VOLUME",
+                     "FROGGER_STR_QUIET", "FROGGER_STR_MEDIUM", "FROGGER_STR_LOUD", "FROGGER_STR_SPEAKER",
+                     "FROGGER_STR_PHONES", "FROGGER_STR_BOTH"):
             self.assertNotIn(self.k[name], used, name)
         for i in range(self.k["FEATURES"]):          # the feature switches: item and label ids
             self.assertNotIn(self.k["FROGGER_ITEM_FEATURE"] + i, used, "feature item %d" % i)
             self.assertNotIn(self.k["FROGGER_STR_FEATURE"] + i, used, "feature label %d" % i)
         for fourcc, names in (("Str ", ("HM_STR_TITLE", "HM_STR_QUEUE", "HM_STR_PLAYLIST", "HM_STR_ADD_TO", "HM_STR_NEXT",
                                         "HM_STR_ALBUM", "HM_STR_ARTIST", "HM_STR_HIDE", "HM_STR_UPNEXT", "HM_STR_REMOVE",
-                                        "HM_STR_CLEAR", "HM_STR_SHOW", "HM_STR_QS_SHUFFLE", "HM_STR_QS_REPEAT",
-                                        "HM_STR_QS_TIMER", "HM_STR_QS_SLEEP", "LETTER_STR", "LETTER_STR2")),):
+                                        "HM_STR_CLEAR", "HM_STR_SHOW", "HM_STR_AFTER", "HM_STR_QS_SHUFFLE", "HM_STR_QS_REPEAT",
+                                        "HM_STR_QS_TIMER", "HM_STR_QS_SLEEP", "HM_STR_QS_CLICKER", "LETTER_STR", "LETTER_STR2")),):
             ids = {r & 0xffff for r, _, _ in self.b.types[fourcc]}
             for name in names:
                 self.assertNotIn(self.k[name], ids, name)

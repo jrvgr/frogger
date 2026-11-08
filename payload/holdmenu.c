@@ -67,6 +67,10 @@
  *   runs fn 28, where main_queue opens the same list with no popup to go
  *   first; Menu, or Select on a song, goes back to the main menu.
  *
+ * - On an album, row 1 is Play After Album (HM_RELABEL): the album's songs,
+ *   as stock adds them to the scratch playlist, go into the queue to play
+ *   once the album playing ends (queue_add_after_album).
+ *
  * Holding On-The-Go itself in Playlists still clears it (queue.c).
  *
  * Holding Menu opens the same popup as quick settings (qs_items has how);
@@ -91,7 +95,7 @@ enum { ACT_QUEUE, ACT_NEXT, ACT_PLAYLIST, ACT_ALBUM, ACT_ARTIST, ACT_HIDE,
 #define R(a)            (1u << (a))
 #define ROWS_ANY        (R(ACT_QUEUE) | R(ACT_PLAYLIST))
 #define ROWS_SONG       0x3fu
-#define ROWS_ALBUM      (ROWS_ANY | R(ACT_ARTIST) | R(ACT_HIDE))
+#define ROWS_ALBUM      (ROWS_ANY | R(ACT_NEXT) | R(ACT_ARTIST) | R(ACT_HIDE))    /* row 1 as Play After Album */
 #define ROWS_ARTIST     (ROWS_ANY | R(ACT_HIDE))
 #define ROWS_NP         (R(ACT_NEXT) | R(ACT_ALBUM) | R(ACT_ARTIST) | R(ACT_HIDE))
 #define ROWS_NP_UPNEXT  (ROWS_NP | R(ACT_QUEUE))    /* row 0 as Up Next */
@@ -263,7 +267,8 @@ static struct {
 
 /* Quick settings: holding Menu (fn 243, stock's backlight toggle) opens the
  * popup with rows 0-2 made into Settings' own items for the time it's up, and
- * row 3 as Sleep (a Confirm row: fn 27 calls fn 191, which goes back through
+ * row 4 as Apple's Clicker item (0x282d: settings.c steps Off, Speaker,
+ * Headphones, Both), and row 3 as Sleep (a Confirm row: fn 27 calls fn 191, which goes back through
  * HM_PICK, with Apple's sleep, fn 249's body, in place of its second call):
  * fn 273 (word 3 0x1eb6, what an on/off or cycling item runs), the item id
  * (word 6) and word 7 0x2780, which sends fn 273's toggle message
@@ -278,15 +283,21 @@ static struct {
 static const uint32_t qs_item[QS_ROWS] = { 0x279f, 0x27a9, 0x27ad };   /* Backlight Timer, Shuffle, Repeat */
 static const uint16_t qs_str[QS_ROWS] = { HM_STR_QS_TIMER, HM_STR_QS_SHUFFLE, HM_STR_QS_REPEAT };
 
-/* Rows 0-2 as Settings' items (on) or as hm_popup has them (off). */
+/* Row 4, after Sleep: Apple's Clicker item, whose toggle settings.c's
+ * clicker_set steps Off, Speaker, Headphones, Both. */
+#define QS_CLICKER      4
+
+/* Rows 0-2 and 4 as Settings' items (on) or as hm_popup has them (off). */
 static void qs_items(int on)
 {
     unsigned i;
 
-    for (i = 0; i < QS_ROWS; i++) {
+    for (i = 0; i <= QS_CLICKER; i++) {
         uint32_t *it = &hm_popup[1 + i * 10];
+        if (i == QS_ROWS)
+            continue;                   /* Sleep: the popup's own Confirm row */
         it[3] = on ? ITEM_SETTING : i ? 0x1ade : 0x1ae2;
-        it[6] = on ? qs_item[i] : 0;
+        it[6] = on ? i == QS_CLICKER ? SETTING_CLICKER : qs_item[i] : 0;
         it[7] = on ? ITEM_TO_SETTINGS : 0x4f81;
     }
 }
@@ -298,6 +309,7 @@ static void qs_relabel(void)
     for (i = 0; i < QS_ROWS; i++)
         set_text(obj_08de, row_el[i], qs_str[i], 0x80);
     set_text(obj_08de, row_el[QS_ROWS], HM_STR_QS_SLEEP, 0x80);
+    set_text(obj_08de, row_el[QS_CLICKER], HM_STR_QS_CLICKER, 0x80);
 }
 
 #define MAX_ALBUM 99
@@ -353,9 +365,23 @@ static uint32_t first_track(uint32_t list)
     return item ? *(volatile uint32_t *)(item + 0x20) : 0;
 }
 
+/* Whether Up Next is the list up. Counting screens alone isn't enough: on a
+ * device fn 20 can change screens past both slides it's counted at (its
+ * early return while 0x08e0 is set, its unanimated 0x08df.90 while 0x08e1
+ * isn't), and Select then fell through to stock's play from the songs array
+ * (a new Now Playing screen over Up Next). So the songs array being ours is
+ * enough too, and puts the count right: Up Next is depth 1. */
 static int upnext_up(void)
 {
-    return up.open && hm.go == GO_RETURN && !hm.go_pending && hm.go_depth == 1;
+    if (up.open && hm.go == GO_RETURN && !hm.go_pending && hm.go_depth == 1)
+        return 1;
+    if (!up.open || hm.open || !browse_items_shown())
+        return 0;
+    debug_note(DEBUG_TAG('u', 'p', 's', 'y'), hm.go | hm.go_pending << 4, (uint32_t)hm.go_depth);
+    hm.go = GO_RETURN;
+    hm.go_pending = 0;
+    hm.go_depth = 1;
+    return 1;
 }
 
 /* The popup on a row of Up Next: row 0 Remove from Queue, row 1 Clear Queue.
@@ -394,6 +420,12 @@ static uint32_t main_queue(void)
     return HM_VIS_RUN;
 }
 
+/* The popup is an album row's: row 1 is Play After Album. */
+static int after_album(void)
+{
+    return !hm.np && !hm.upnext && hm.from && hm.from->kind == LIST_ALBUMS;
+}
+
 /* Our actions on `track` (the first of the held row's songs, or the one
  * playing); returns where the VM goes on. */
 static uint32_t act(int action, uint32_t track, volatile uint32_t *l)
@@ -401,7 +433,12 @@ static uint32_t act(int action, uint32_t track, volatile uint32_t *l)
     uint32_t row, list, n, i;
 
     switch (action) {
-    case ACT_NEXT:              /* (only song rows: the list is as it was) */
+    case ACT_NEXT:
+        if (after_album()) {    /* the list goes back as for Hide */
+            queue_add_after_album(playlist_scratch());
+            break;
+        }
+        /* a song row: the list is as it was */
         n = browse_album_items(track, hm.np, &list, album_idx, album_nums, MAX_ALBUM);
         queue_add_items(list, album_idx, n);
         return HM_GO_BACK;
@@ -517,6 +554,8 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
         }
         if (hm.show && (hm.vis & R(ACT_HIDE)))
             set_text(obj_08de, row_el[ACT_HIDE], HM_STR_SHOW, 0x80);
+        if (after_album() && (hm.vis & R(ACT_NEXT)))
+            set_text(obj_08de, row_el[ACT_NEXT], HM_STR_AFTER, 0x80);
         return pc;
     case HM_UPNEXT_BUILD:
         browse_items(queue_list(), up.idx, up.n, 1, 0);
@@ -536,7 +575,7 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
             return pc;                  /* over a popup, or switched off: stock's backlight toggle */
         hm.qs = 1;
         qs_items(1);
-        hm.vis = R(0) | R(1) | R(2) | R(QS_ROWS);       /* the settings, Sleep */
+        hm.vis = R(0) | R(1) | R(2) | R(QS_ROWS) | R(QS_CLICKER);    /* the settings, Sleep, Clicker */
         hm.vis_dirty = 1;
         hm.open = 1;
         hm.swallow = 0;
@@ -734,6 +773,7 @@ static const char *const hm_strings[] = {
     [HM_STR_REMOVE - HM_STR_TITLE] = "Remove from Queue",
     [HM_STR_CLEAR - HM_STR_TITLE] = "Clear Queue",
     [HM_STR_SHOW - HM_STR_TITLE] = "Show",
+    [HM_STR_AFTER - HM_STR_TITLE] = "Play After Album",
     [HM_STR_QS_SLEEP - HM_STR_TITLE] = "Sleep",
 };
 
@@ -741,16 +781,23 @@ static const char *const hm_strings[] = {
  * (Apple's setters: Shuffle 0xdc530 keeps on at +0x20 and Albums at +0x92,
  * Repeat 0xdc1dc 0 Off, 1 All, 2 One at +0x1c, the backlight timer 0xd8670
  * 0 Off, 2-5 the seconds, 6 Always On at +0xaf8). */
+char qs_text[24];                       /* the last label made (emupod's quicksettings.py reads it) */
+
 static const char *qs_label(uint32_t id)
 {
-    static char buf[24];
+    char *buf = qs_text;
     static const char *const timer[] = { "Off", "1 s", "2 s", "5 s", "10 s", "20 s", "Always On" };
     volatile uint8_t *root = (volatile uint8_t *)prefs_root();
     const char *name, *val;
     uint32_t v;
     char *d = buf;
 
-    if (id == HM_STR_QS_SHUFFLE) {
+    if (id == HM_STR_QS_CLICKER) {
+        uint32_t f = *(volatile uint32_t *)(root + 0xb04);
+        name = "Clicker";
+        v = (f & FROGGER_PREF_PLACE) >> FROGGER_PREF_PLACE_SHIFT;
+        val = !(f & FROGGER_PREF_CLICKER) ? "Off" : v == CLICK_PHONES ? "Headphones" : v == CLICK_BOTH ? "Both" : "Speaker";
+    } else if (id == HM_STR_QS_SHUFFLE) {
         name = "Shuffle";
         val = !root[0x20] ? "Off" : root[0x92] ? "Albums" : "Songs";
     } else if (id == HM_STR_QS_REPEAT) {
@@ -766,7 +813,7 @@ static const char *qs_label(uint32_t id)
         *d++ = *name++;
     *d++ = ':';
     *d++ = ' ';
-    while (*val && d < buf + sizeof buf - 1)
+    while (*val && d < buf + sizeof qs_text - 1)
         *d++ = *val++;
     *d = 0;
     return buf;
@@ -781,7 +828,7 @@ const void *holdmenu_resource(uint32_t fourcc, uint32_t id, uint32_t *size)
         return 0;
     if ((id & 0xffff) == PLAYLISTS_TITLE && hm.picking)
         id = HM_STR_ADD_TO;             /* the picker's title */
-    if (id >= HM_STR_QS_SHUFFLE && id < HM_STR_QS_SHUFFLE + QS_ROWS)
+    if ((id >= HM_STR_QS_SHUFFLE && id < HM_STR_QS_SHUFFLE + QS_ROWS) || id == HM_STR_QS_CLICKER)
         s = qs_label(id);
     else if (id == HM_STR_TITLE)
         s = hm.qs ? "Settings" : hm_title;

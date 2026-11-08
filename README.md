@@ -37,7 +37,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
 </table>
 
 - **Cover page.** Now Playing opens on the title, a 72×72 cover and the progress bar. Select slides to Apple's page and back.
-- **Hold menu.** Hold Select on a song, album, artist, playlist or Now Playing: Add to Queue, Play Album Next, Add to Playlist, Go to Album/Artist, Hide.
+- **Hold menu.** Hold Select on a song, album, artist, playlist or Now Playing: Add to Queue, Play Album Next (Play After Album on albums), Add to Playlist, Go to Album/Artist, Hide.
 - **Add to Playlist.** Add songs, albums or artists to any playlist on the iPod, synced ones included, or to a new one. They're kept on the iPod and survive a restart.
 - **Queue.** Queued songs play next, then playback goes back to where it was. Play, remove or clear from Now Playing or the main menu.
 - **Hidden songs.** Out of Artists, Albums, Genres and Composers, still in Songs and playlists. Settings › Show Hidden lists them.
@@ -49,6 +49,7 @@ Work in progress. Some features need a syncing app that knows about them: that's
 - **Skip counts.** Songs left within 2–20 s count as skipped, as in iTunes.
 - **Battery percentage** in the title bar.
 - **Disk recovery.** On a flash mod (SD or CF adapter), a card that stops answering after a voltage dip is reset and the read retried, so the music plays on and the menus keep working.
+- **Clicker in the headphones.** Settings › Clicker: Off, Speaker, Headphones or Both. In the headphones the click is mixed into the music, so it follows the volume; Settings › Click Volume makes it Quiet, Medium or Loud. Paused or stopped, it clicks on the speaker.
 - **Flash Storage.** Settings › Flash Storage (Off, Auto, On; Off by default): on a flash mod the disk is sent to standby 1 s after its last use instead of Apple's 2–15 s. Auto turns it on only when the drive says it's flash.
 
 Settings has a switch for each one you might not want. Screenshots are from the emulator with made-up music (`tools/emupod/screenshots.py`). How it all works: `docs/`.

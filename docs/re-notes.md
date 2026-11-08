@@ -939,3 +939,38 @@ boundaries come from `push {..., lr}` prologues, so they are approximate.
   is UTF-16 halfwords (`0xc01b4` compares them as such).
 - **Not checked on a device**: the backlight with Hold on (left to stock), the LCD's look at
   1.5×, and sleep with Hold on while paused (the screen goes off as stock's does, presumably).
+
+## The clicker (**confirmed** in emupod)
+
+`payload/clicker.c`, checked by `tools/emupod/clicker.py`.
+
+- **The piezo.** A task around `0x13c600` takes tone messages from mailbox 20 (kind byte `+0x10`:
+  0 queue a tone, divisor `+0x14` and length `+0x18`, into a 16-entry ring; 1 flush) and plays
+  each in turn at `0x13c6e8`: the divisor from `[r7 + 4 * r4]` into the second UART
+  (`0xc000604c` = `0x80`, low byte to `+0x40`, high to `+0x44`, `+0x4c` = 3, `+0x48 |= 7`),
+  then waits the length (`[r6 + 4 * r4]`, added to `0x139148`'s clock). A wheel click is divisor
+  `0x64`, length `0x64`. Apple's Clicker Off sends no tones.
+- **The sound path.** The COP's FIQ goes to IRAM `0x40000000`, which reads `0xcf00100c` and
+  `0xcf001030` and runs the audio handler (`0x400177c0`) while bit 5 is set in both, round again
+  until no source is left. Apple copies one of several handler variants there (`0x3443d4`... for
+  playback, `0x345248`... read `0xc0002580` for recording): the playback one feeds s16 stereo from
+  the ring `0x4449f80`–`0x4461980` at `[0x40017704]` up to the decoder's `[0x4001770c]` into the
+  I2S FIFO `0xc0002540`, as many halfwords as `([0xc000251c] >> 23) & 14` says are free, wrapping
+  at the end; with nothing decoded it sends 12 zeros and counts an underrun at `0x4449f7c`. The
+  decoder writes `0x1200`-byte blocks and stays 40 ms to 0.5 s ahead. Paused or stopped, the FIQ
+  is masked (COP interrupt enable bit 5 off).
+- **Headphones.** `click_hook` asks `click_tone`; Headphones and Both add a 10 ms click (4 ms of a
+  1 kHz square through a one-pole low-pass, peak -30/-24/-18 dBFS by Click Volume) to the decoded
+  music 64 frames past the read pointer, before the codec, so it follows the headphone volume.
+  It first waits up to 3 ms for the read pointer to move; if it doesn't (paused, stopped), or the
+  pointers are out of the ring, or under 284 frames are decoded, the click goes to the piezo.
+- **Settings.** Apple's Clicker row cycles Off, Speaker, Headphones, Both (its function, fn 401,
+  sends the value it wants, On or Off; quick settings' row sends the toggle `0x282f`): Off and On
+  go through Apple's setter (bit 0, `obj+0x33`), the place is prefs bits 30-31, Click Volume 14-15.
+  Apple uses only bits 0 and 1 of the flags word (its setter `0xdb714`/`0xdb744`, readers at
+  `0xa4384`, `0xe63b8`...), so stock firmware still reads Clicker On/Off right.
+- **emupod.** Stock emupod models only the 1.x sound registers (`0xc0002440`/`0xc0002404`), so 2.3's
+  FIQ returned at once and nothing played. tools/emupod/emupod-gen3.patch adds the I2S FIFO and the
+  source bit (set from the FIQ until the FIFO is fed), for every check. Its FIQ still falls behind now
+  and then (`audio_late`).
+

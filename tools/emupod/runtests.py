@@ -18,6 +18,8 @@ LOGS = ROOT / "build/emupod-work/logs"
 FEATURES = {
     "holdmenu2": ("Hold menu: Go to Album/Artist, Play Album Next, Hide", ["holdmenu.c", "browse.c", "hide.c"]),
     "upnext": ("Up Next: open, remove, play from, clear", ["queue.c", "holdmenu.c", "browse.c"]),
+    "clicker": ("Clicker: Speaker, Headphones, Both; Click Volume; the piezo while paused", ["clicker.c", "settings.c"]),
+    "afteralbum": ("Play After Album: the queue waits for the album playing", ["holdmenu.c", "queue.c"]),
     "unhide": ("Show (un-hide), Settings › Show Hidden, FroggerHidden", ["hide.c", "settings.c"]),
     "quicksettings": ("Quick settings (hold Menu), its Sleep", ["holdmenu.c"]),
     "queuerow": ("The main menu's Queue row", ["queue.c"]),
@@ -49,6 +51,21 @@ CHECKS = list(FEATURES)
 UNCHECKED = {}
 
 
+def lock_work():
+    """Hold build/emupod-work/.run.lock for this run (released when the process ends): the checks
+    rebuild their cards in build/emupod-work, so a second run at the same time (a second pytest or
+    runtests.py) would overwrite the first one's cards mid-check and fail checks at random. It waits."""
+    import fcntl
+    LOGS.parent.mkdir(parents=True, exist_ok=True)
+    f = open(LOGS.parent / ".run.lock", "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("another emupod run is using build/emupod-work; waiting for it to end", file=sys.stderr, flush=True)
+        fcntl.flock(f, fcntl.LOCK_EX)
+    return f
+
+
 def run(name):
     t = time.time()
     with open(LOGS / f"{name}.log", "w") as log:
@@ -62,6 +79,7 @@ def main():
     ap.add_argument("-j", type=int, default=4)
     ap.add_argument("scripts", nargs="*", default=CHECKS)
     a = ap.parse_args()
+    lock = lock_work()  # noqa: F841 (held till exit)
     LOGS.mkdir(parents=True, exist_ok=True)
     subprocess.run([sys.executable, str(HERE / "mkimage.py")], check=True)
     failed = []

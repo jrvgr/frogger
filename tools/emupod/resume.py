@@ -4,15 +4,17 @@ step, each its own process (emupod opens once per process), on a copy of the car
     resume.py leave    # play Long Mix (25 min), scrub into it, Next (Tone A): its bookmark is
                        # where it was left; pick it again: it starts 5 s before
     resume.py sleep    # card with a mhit bookmark (120 s, mkresume.py --bookmark 120000): Long
-                       # Mix starts at 115 s; pause, sleep (hold Play): Play Counts holds 115 s
-    resume.py reboot   # boot sleep's card: it starts at 110 s (Play Counts beats the mhit); scrub
+                       # Mix starts at 115 s; it plays on a second, pause, sleep (hold Play): Play
+                       # Counts holds where it was paused (~116 s)
+    resume.py reboot   # boot sleep's card: it starts 5 s before that (Play Counts beats the mhit); scrub
                        # to the end: the next song plays, Long Mix's bookmark is 0
     resume.py queue    # Tone A playing, Add to Queue on Long Mix, Next: it starts at 115 s
     resume.py off      # Settings > Resume Mixes Off: Long Mix starts at 0
     resume.py          # all of them, in that order
 
 (A scrub, then sleep, never sleeps in emupod: so sleep starts from a bookmark instead.)
-Prints the player's position and Long Mix's bookmark at each step; exits 1 if one is off.
+Prints the player's position and Long Mix's bookmark at each step; exits 1 if one is off. Start
+positions are read where the player sets them (0xb9550): the song plays on after that.
 """
 import shutil, struct, subprocess, sys
 from pathlib import Path
@@ -65,6 +67,16 @@ def run(step):
             tag, rd(track + 0x54) if track else 0, pos, flags, rd(syms["resume_track"]) == track != 0))
         return track, pos
 
+    def started(action):
+        """Run action (a press that starts a song); the start position the player got ([player+0x2164]
+        just after 0xb9550, resume_start_hook's store), or -1 if no bookmark was used: the song plays
+        on, so a position read later has moved."""
+        p.m.hook_start([0xb9554], 4, 0x164)
+        action()
+        log = p.m.hook_log()
+        p.m.hook_start([], None, 0)
+        return log[-1][3] if log else -1
+
     def scrub(steps):
         p.press("select", after_us=300_000)                 # Apple's page
         p.press("select", after_us=300_000)                 # scrubbing
@@ -80,9 +92,9 @@ def run(step):
         p.press("select", after_us=2_000_000); p.settle()
 
     if step == "leave":
-        p.press("select", after_us=2_000_000); p.settle()   # Long Mix, row 0
+        start = started(lambda: (p.press("select", after_us=2_000_000), p.settle()))   # Long Mix, row 0
         mix, pos = state("playing Long Mix")
-        check("Long Mix is flagged, starts at 0", rd(syms["resume_track"]) == mix and pos < 2000)
+        check("Long Mix is flagged, starts at 0", rd(syms["resume_track"]) == mix and start in (0, -1) and pos < 5000)
         scrub(-60)
         _, at = state("scrubbed")
         check("the scrub moved it", at > 30_000)
@@ -95,11 +107,12 @@ def run(step):
         _, pos = state("picked Long Mix again")
         check("starts 5 s before the bookmark", abs(pos - (bm - 5000)) < 1500)
     elif step == "sleep":
-        p.press("select", after_us=2_000_000); p.settle()   # Long Mix, row 0
-        mix, pos = state("playing Long Mix")
-        check("starts 5 s before its mhit bookmark (120 s)", pos == 115_000)
+        start = started(lambda: (p.press("select", after_us=2_000_000), p.settle()))   # Long Mix, row 0
+        mix, _ = state("playing Long Mix")
+        check("starts 5 s before its mhit bookmark (120 s)", start == 115_000)
         w0 = p.m.stats()["ata_writes"]
         p.press("play", after_us=1_000_000)                     # pause
+        _, pos = state("paused")
         for _ in range(3):
             p.press("menu"); p.settle()
         p.press("play", hold_us=4_000_000, after_us=20_000_000) # hold Play: sleep
@@ -116,17 +129,19 @@ def run(step):
         p.scroll(-3); p.run(500_000)                        # Long Mix
         p.press("select", hold_us=2_000_000); p.settle()    # hold menu
         p.press("select", after_us=3_000_000); p.settle()   # Add to Queue
-        p.press("next", after_us=2_000_000); p.settle()
+        start = started(lambda: (p.press("next", after_us=2_000_000), p.settle()))
         mix, pos = state("Next: Long Mix from Up Next")
-        check("Up Next's Long Mix starts at its bookmark - 5 s", rd(syms["resume_track"]) == mix and pos == 115_000)
+        check("Up Next's Long Mix starts at its bookmark - 5 s", rd(syms["resume_track"]) == mix and start == 115_000)
     elif step == "off":
-        p.press("select", after_us=2_000_000); p.settle()   # Long Mix
+        start = started(lambda: (p.press("select", after_us=2_000_000), p.settle()))   # Long Mix
         mix, pos = state("Resume Off: Long Mix")
-        check("not flagged, starts at 0", rd(syms["resume_track"]) == 0 and pos == 0)
+        check("not flagged, starts at 0", rd(syms["resume_track"]) == 0 and start in (0, -1))
     else:
-        p.press("select", after_us=2_000_000); p.settle()
+        counts = play_counts(card)
+        bm = counts[2][2] if len(counts) == 3 else -1            # where sleep left it (paused, ~116 s)
+        start = started(lambda: (p.press("select", after_us=2_000_000), p.settle()))
         mix, pos = state("after reboot: Long Mix")
-        check("the bookmark came back from Play Counts (115 s)", pos == 110_000)
+        check("the bookmark came back from Play Counts (%d ms) - 5 s" % bm, bm > 115_000 and start == bm - 5000)
         scrub(-900)
         now, at = state("scrubbed to the end")             # it ends and the next song starts
         p.press("next", after_us=2_000_000); p.settle()
