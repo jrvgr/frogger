@@ -21,8 +21,18 @@
  *
  * The FIQ runs only while a song plays (it's masked when paused or stopped).
  * click_tone waits up to PLAYING_US (3 ms) for the read pointer to move; if it
- * doesn't, or the pointers aren't in the ring, or too little is decoded,
- * the click goes to the piezo instead, even in Headphones.
+ * doesn't, the click is played on its own (click_paused): paused or stopped,
+ * Apple turns off only the I2S output (0xc0002500 = 0, a FIFO reset) and
+ * masks the FIQ (0x12588c); the codec (a WM8731) stays powered with its DAC
+ * and headphone output on. So the click turns I2S on as Apple's play start
+ * does (0x1258b8: the word clock's edges, I2S off, FIFO reset, 16 zeros,
+ * 0xc0002500 = 0xd), feeds the FIFO itself (a word per channel, the sample
+ * in the top half, as the FIQ does), lets it drain and puts back Apple's
+ * paused state. Only when Apple's copy of the codec's registers (0x140614
+ * keeps them at 0x44be49c) says it's active, DAC and output powered: before
+ * the first song since boot, and whenever Apple has powered it down, the
+ * click goes to the piezo, as it does when the pointers aren't in the ring,
+ * or too little is decoded while a song plays.
  *
  * The click: about 1 kHz square for 4 ms, rounded off by a one-pole
  * low-pass (as the piezo's mass does), 10 ms with its ring-out, at 44.1 kHz
@@ -37,6 +47,16 @@
 #define RING_READ       (*(volatile uint32_t *)0x40017704)
 #define RING_WRITE      (*(volatile uint32_t *)0x4001770c)
 #define USEC_TIMER      (*(volatile uint32_t *)0xcf001110)
+#define I2S_CTL         (*(volatile uint32_t *)0xc0002500)  /* 0xd on, 0 off (0x1258b8, 0x12588c) */
+#define I2S_FIFO_CFG    (*(volatile uint32_t *)0xc000251c)  /* bit 16: FIFO reset; free words at bits 23-26 */
+#define I2S_FIFO        (*(volatile uint32_t *)0xc0002540)
+#define COP_INT_EN      (*(volatile uint32_t *)0xcf001030)  /* bit 5: the sound FIQ (0xcf001034 sets, 0xcf001038 clears) */
+#define WORD_CLOCK      (*(volatile uint32_t *)0xcf00003c)  /* bit 6 */
+#define WM_REGS         ((volatile uint16_t *)0x044be49c)   /* Apple's copy of the codec's registers: reg << 9 | value */
+#define WM_POWER        6                                   /* bits 3 DAC, 4 output, 7 all: powered down */
+#define WM_ACTIVE       9                                   /* bit 0 */
+#define I2S_FREE()      ((I2S_FIFO_CFG >> 23) & 14)
+#define FEED_US         2000            /* the FIFO not taking a word this long: no clock, give up */
 
 #define CLICK_FRAMES    441             /* 10 ms at 44.1 kHz */
 #define CLICK_TONE      176             /* 4 ms of it the square wave */
@@ -51,7 +71,7 @@ static const int16_t click_peak[3] = { 4125, 8231, 16423 };
 
 static int16_t click[CLICK_FRAMES];     /* peak 32767 */
 
-uint32_t clicker_mixed, clicker_fallback;   /* counts, for a look from emupod or a debug record */
+uint32_t clicker_mixed, clicker_paused, clicker_fallback;   /* counts, for a look from emupod or a debug record */
 
 static uint32_t prefs_flags(void)
 {
@@ -137,6 +157,71 @@ static int click_mix(unsigned level)
     return 1;
 }
 
+static void fifo_reset(void)
+{
+    I2S_FIFO_CFG |= 1u << 16;
+    I2S_FIFO_CFG &= ~(1u << 16);
+}
+
+static int word_clock_is(unsigned level)
+{
+    uint32_t t0 = USEC_TIMER;
+
+    while ((WORD_CLOCK >> 6 & 1) != level)
+        if (USEC_TIMER - t0 > FEED_US)
+            return 0;
+    return 1;
+}
+
+/* One word into the FIFO once it has room; 0 if it never does, or Apple's
+ * FIQ came on meanwhile (a song started: the FIFO is Apple's again). */
+static int feed(uint32_t w)
+{
+    uint32_t t0 = USEC_TIMER;
+
+    while (!I2S_FREE())
+        if (USEC_TIMER - t0 > FEED_US || (COP_INT_EN & 0x20))
+            return 0;
+    if (COP_INT_EN & 0x20)
+        return 0;
+    I2S_FIFO = w;
+    return 1;
+}
+
+/* The click at `level` on its own, nothing playing; 0 if it can't (the codec
+ * isn't up, I2S isn't in Apple's paused state, or its clock doesn't run). */
+static int click_paused(unsigned level)
+{
+    int32_t gain = click_peak[level];
+    uint32_t i, t0;
+    int ok = 1;
+
+    if (!(WM_REGS[WM_ACTIVE] & 1) || (WM_REGS[WM_POWER] & 0x98) || (COP_INT_EN & 0x20) || I2S_CTL)
+        return 0;
+    if (!click[CLICK_HALF])
+        click_make();
+    if (!word_clock_is(1) || !word_clock_is(0) || !word_clock_is(1))
+        return 0;                       /* as 0x1258b8: start on the word clock */
+    fifo_reset();
+    for (i = 0; i < 16; i++)
+        I2S_FIFO = 0;
+    I2S_CTL = 0xd;
+    for (i = 0; i < CLICK_FRAMES && ok; i++) {
+        uint32_t w = (uint32_t)(click[i] * gain >> 15) << 16;
+
+        ok = feed(w) && feed(w);
+    }
+    for (i = 0; i < 16 && ok; i++)
+        ok = feed(0);                   /* ends on silence */
+    for (t0 = USEC_TIMER; ok && I2S_FREE() < 14 && USEC_TIMER - t0 < FEED_US; )
+        ;                               /* played out */
+    if (COP_INT_EN & 0x20)
+        return 1;                       /* a song started meanwhile: I2S is Apple's */
+    I2S_CTL = 0;
+    fifo_reset();                       /* Apple's paused state again */
+    return 1;
+}
+
 /* The piezo task is about to play a tone (divisor, length): returns nonzero
  * to leave the piezo out. Apple's Clicker Off sends no tones. */
 int click_tone(uint32_t divisor, uint32_t length)
@@ -146,11 +231,14 @@ int click_tone(uint32_t divisor, uint32_t length)
     (void)divisor;
     if (place == CLICK_SPEAKER || length > CLICK_MAX_LEN)
         return 0;
-    if (!click_mix(clicker_volume())) {
+    if (click_mix(clicker_volume()))
+        clicker_mixed++;
+    else if (click_paused(clicker_volume()))
+        clicker_paused++;
+    else {
         clicker_fallback++;
-        return 0;                       /* nothing playing: the piezo, even in Headphones */
+        return 0;                       /* the codec isn't up: the piezo, even in Headphones */
     }
-    clicker_mixed++;
     return place == CLICK_PHONES;
 }
 
