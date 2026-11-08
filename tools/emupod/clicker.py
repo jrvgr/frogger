@@ -7,10 +7,11 @@ the first wrong step; screenshots ck_*.png):
    (the settings object's +0x33 byte 0). Click Volume steps Quiet > Medium > Loud > Quiet (bits 14-15).
 2. The song plays; a wheel step in the Music menu is one click:
    Speaker: the piezo clicks, nothing is mixed into the music.
-   Headphones: no piezo click; the click is added to the decoded music ahead of the read pointer (the
+   Headphones: no piezo click (no divisor set, and the task never on to
+   its pump of 0xaa bytes into the UART, 0x13c710-0x13c7c4: that's the sound on a device); the click is added to the decoded music ahead of the read pointer (the
    ring 0x4449f80-0x4461980, before the codec) and comes out of the I2S FIFO: the song is silence, so
-   what the sound FIQ sends then is the click. Its peak per Click Volume: about 1036, 2067, 4125
-   (-30, -24, -18 dBFS).
+   what the sound FIQ sends then is the click. Its peak per Click Volume: about 4125, 8231, 16423
+   (-18, -12, -6 dBFS).
    Both: the piezo and the music.
 3. Paused, Headphones: the piezo clicks instead (the sound FIQ is off).
 4. Nothing in Apple's image changed (read-only on a device)."""
@@ -22,7 +23,8 @@ import hmcard, itdb, shutil, subprocess
 SYM = {l.split()[2]: int(l.split()[0], 16) for l in open(ROOT / "build/payload/payload.sym") if len(l.split()) == 3}
 RING, RING_END = 0x4449f80, 0x4461980
 READ, WRITE = 0x40017704, 0x4001770c
-PEAK = {0: 1036, 1: 2067, 2: 4125}
+PEAK = {0: 4125, 1: 8231, 2: 16423}
+PUMP = 0x13c710                         # the piezo task, on to its 0xaa pump (0x13c724): emupod's UART never asks for bytes, so the way there
 
 
 def silent_card():
@@ -119,6 +121,7 @@ def click_once(place, volume=0):
             if p.m.fiqs() - f >= 4:
                 break
     piezo, mixed = p.m.click_count(), rd(SYM["clicker_mixed"])
+    p.m.hook_start([PUMP], None, 0)     # the piezo's sound: the pump, 0xaa bytes into the UART
     p.m.audio_take()
     for _ in range(12):                 # 2.3 moves the highlight once per 4-6 steps
         p.wheel(click_once.d, gap_us=0, after_us=12_000)
@@ -127,8 +130,10 @@ def click_once(place, volume=0):
     click_once.d = -click_once.d
     p.run(150_000)                      # the 10 ms click, played out (emupod's FIQ runs slow)
     out = p.m.audio_take()
+    pumped = len(p.m.hook_log()); p.m.hook_start([], None, 0)
     peak = max((abs(x) for x in struct.unpack("<%dh" % (len(out) // 2), out)), default=0)
-    return p.m.click_count() - piezo, rd(SYM["clicker_mixed"]) - mixed, peak
+    pz = max(p.m.click_count() - piezo, 1) if pumped else 0    # the pump is the sound, divisor set or not
+    return pz, rd(SYM["clicker_mixed"]) - mixed, peak
 click_once.d = 1                        # up and down the Music menu
 
 pz, mx, peak = click(0)
