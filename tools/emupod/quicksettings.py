@@ -1,17 +1,20 @@
 """Frogger image + hmcard.py's card (qs-card.img): quick settings on hold Menu (payload/holdmenu.c,
 settings.c). One run, checking as it goes (exits 1 on the first wrong step; screenshots qs_*.png):
 
-1. Main menu: hold Menu opens the popup with four rows (Backlight, Shuffle, Repeat, Sleep), and no
+1. Main menu: hold Menu opens the popup with five rows (Backlight, Shuffle, Repeat, Sleep, Clicker), and no
    backlight toggle runs (0x139a80).
 2. Shuffle cycles Off > Songs > Albums > Off, Repeat Off > One > All > Off, through Apple's setter
    (0xdafc4) with Settings' toggle message: the settings object (+0x1c, +0x1d) and the prefs
    (+0x20/+0x92, +0x1c) agree, and the labels follow ("Shuffle: Songs").
 3. Backlight: cycles the timer Off > the timer before (or 10 s) > Always On, and the backlight takes
    each at once (its own copy, UI object +0x164c, in seconds); the popup is titled Settings; the
-   timer is remembered in the prefs flags (bits 24-26).
+   timer is remembered in the prefs flags (bits 24-26). Clicker (row 4, after Sleep) shows its value
+   ("Clicker: Speaker") and cycles Speaker > Headphones > Both > Off > Speaker through Apple's
+   Clicker item (0x282d; prefs bit 0 and bits 30-31).
 4. Menu: the popup goes, the main menu is as before (same pixels). Settings shows the values
    (qs_settings.png, by eye).
-5. Now Playing: hold Menu opens it there too; Menu: Now Playing again (same pixels).
+5. Now Playing (paused, so the clock holds still): hold Menu opens it there too; Menu: Now Playing
+   again (same pixels).
 6. Songs: hold Select still opens the hold menu's song rows; hold Menu over it is stock's backlight
    toggle (no quick settings). Nothing in Apple's image changed.
 7. Main menu: hold Menu > Sleep runs Apple's sleep (fn 249, what holding Play runs) to its end,
@@ -77,7 +80,7 @@ def values():
 
 menu_px = p.settle()
 n = hold_menu("main")
-check("main menu: hold Menu opens quick settings", hm(0) == 1 and hm(18) == 1 and hm(11) == 0xf, "open %d qs %d vis %x" % (hm(0), hm(18), hm(11)))
+check("main menu: hold Menu opens quick settings", hm(0) == 1 and hm(18) == 1 and hm(11) == 0x1f, "open %d qs %d vis %x" % (hm(0), hm(18), hm(11)))
 check("  no backlight toggle", n == 0, "%d" % n)
 t0 = rd(root + 0xaf8)
 flags = lambda: rd(root + 0xb04)
@@ -106,9 +109,18 @@ for want in (1, 2, 0):
     sh, rp, tm, obj = values()
     check("Repeat: Select -> %s" % ("Off", "One", "All")[want], items == [0x27ad] and rp == want and obj[1] == want,
           "items %s prefs %d obj %s" % ([hex(i) for i in items], rp, obj))
+p.scroll(2); p.settle(); p.run(300_000)                               # past Sleep: Clicker
+qs_text = lambda: bytes(p.m.mem_read(SYM["qs_text"], 24)).split(b"\0")[0].decode()
+check("Clicker: its row shows the value", qs_text() == "Clicker: Speaker", repr(qs_text()))
+for want, tag in (((1, 1), "Headphones"), ((1, 2), "Both"), ((0, 0), "Off"), ((1, 0), "Speaker")):
+    items = select()
+    f = flags()
+    check("Clicker: Select -> %s" % tag, (f & 1, f >> 30 & 3) == want and items[:1] == [0x282d] and qs_text() == "Clicker: " + tag,
+          "flags %x items %s label %r" % (f, [hex(i) for i in items], qs_text()))
+    p.shot("qs_clicker_%s.png" % tag.lower(), 1)
 p.press("menu"); px = p.settle()
 check("Menu: the popup goes, the main menu as before", hm(18) == 0 and hm(0) == 0 and hm(17) == 0 and px == menu_px)
-check("  rows 0-2 are the popup's own again", [rd(SYM["hm_popup"] + 4 * (1 + 10 * i + 7)) for i in range(3)] == [0x4f81] * 3)
+check("  rows 0-2 and 4 are the popup's own again", [rd(SYM["hm_popup"] + 4 * (1 + 10 * i + 7)) for i in (0, 1, 2, 4)] == [0x4f81] * 4)
 p.scroll(2); p.settle(); p.press("select"); p.settle()                 # Settings
 p.scroll(5); p.settle(); p.shot("qs_settings.png", 1)                  # by eye: Shuffle Off, Repeat Off, Backlight Timer Off
 p.press("menu"); p.settle()
@@ -116,9 +128,10 @@ p.scroll(-2); p.settle(); p.run(300_000)                              # back to 
 p.press("select"); p.settle()
 p.scroll(3); p.press("select"); p.settle()                            # Songs
 p.press("select", after_us=1_500_000); p.settle()                     # Apple: Now Playing
+p.press("play", after_us=800_000)                                     # paused: the clock and bar hold still
 np_px = p.settle()
 hold_menu("np")
-check("Now Playing: hold Menu opens quick settings", hm(18) == 1 and hm(11) == 0xf)
+check("Now Playing: hold Menu opens quick settings", hm(18) == 1 and hm(11) == 0x1f)
 p.press("menu", after_us=1_500_000); px = p.settle()
 check("  Menu: Now Playing again", hm(18) == 0 and px == np_px)
 p.press("menu", after_us=1_500_000); p.settle()                       # Songs

@@ -50,6 +50,7 @@
 #define browse_reset    ((void (*)(uint32_t ui))0xd6138)
 #define set_level       ((void (*)(uint32_t lib, uint32_t level))0xdce44)
 #define set_artist      ((uint32_t (*)(uint32_t lib, int32_t i))0xd539c)
+#define set_album       ((uint32_t (*)(uint32_t lib, int32_t i))0xd5150)
 /* Each level's array, built from the query: returns its count. */
 static const uint32_t build_array[5] = { 0x7c3a0, 0x7c1a8, 0x7c368, 0x7c178, 0x7c460 };
 /* The 0x08eb methods that build a level and refresh its list: .f8, .f5, .f6,
@@ -136,6 +137,14 @@ void browse_save(int kind, uint32_t row)
             bs.arrays |= 1u << i;
     for (i = 0; i < sizeof bs.lib_state / 4; i++)
         bs.lib_state[i] = word(lib, LIB_STATE / 4 + i);
+    /* Menu back from a list builds nothing, so the filter picked going in
+     * (an album, from Albums) is still set, and the arrays below hold that
+     * one's rows: the restore puts the held list's own filter (and the ones
+     * below) back to All and leaves those arrays out (browse_restore). */
+    if (kind == LIST_ARTISTS)
+        bs.arrays &= ~(1u << 3);
+    if (kind == LIST_ARTISTS || kind == LIST_ALBUMS)
+        bs.arrays &= ~(1u << 4);
     for (i = 0; i < 5; i++)
         bs.cache[i] = word(ui, UI_CACHE + i);
     for (i = 0; i < 4; i++)
@@ -182,6 +191,10 @@ void browse_restore(void)
     browse_list(lib, bs.browsed);
     for (i = 0; i < sizeof bs.lib_state / 4; i++)
         put(lib, LIB_STATE / 4 + i, bs.lib_state[i]);
+    if (bs.kind == LIST_ARTISTS)
+        set_artist(lib, -1);
+    if (bs.kind == LIST_ARTISTS || bs.kind == LIST_ALBUMS)
+        set_album(lib, -1);
     set_level(lib, bs.level);
     for (i = 0; i < 5; i++)
         if (bs.arrays & (1u << i))
@@ -304,6 +317,20 @@ uint32_t browse_playing(void)
 #define songs_reset     ((void (*)(uint32_t ui))0xd6478)
 #define LIB_SONGS       (0x898 / 4)
 
+/* The array browse_items last put in, its count and a hash of its items:
+ * the songs slot can hold a stock array at the same address once ours is
+ * freed (the heap hands it straight back), so the address alone won't do. */
+static struct { uint32_t arr, n, sum; } items;
+
+static uint32_t items_hash(uint32_t arr, uint32_t n)
+{
+    uint32_t h = n, k;
+
+    for (k = 0; k < n; k++)
+        h = (h << 5 | h >> 27) ^ word(arr, k);
+    return h;
+}
+
 void browse_items(uint32_t list, const uint32_t *idx, unsigned n, int fresh, uint32_t row)
 {
     uint32_t ui = UI_OBJECT, lib = library(), arr, db, w = held_widget;
@@ -326,12 +353,23 @@ void browse_items(uint32_t list, const uint32_t *idx, unsigned n, int fresh, uin
         mem_free(word(lib, LIB_SONGS));
     put(lib, LIB_SONGS, arr);
     put(lib, LIB_SONGS + 1, n);
+    items.arr = arr;
+    items.n = n;
+    items.sum = items_hash(arr, n);
     put(ui, UI_CACHE, 0xffffffffu);
     if (fresh)
         return;
     call1(build_list[4], ui);
     if (w && word(w, 0x90 / 4) && word(w, 0x9c / 4) == n)
         move_to(w, row);
+}
+
+int browse_items_shown(void)
+{
+    uint32_t lib = library();
+
+    return lib && items.arr && word(lib, LIB_SONGS) == items.arr && word(lib, LIB_SONGS + 1) == items.n
+           && items_hash(items.arr, items.n) == items.sum;
 }
 
 /* The hold menu's Show: whether every song of the held row (kind, untagged

@@ -30,6 +30,8 @@ this folder.
 | Add to Queue on any row, hidden songs above it | `holdrow.py` |
 | Show (un-hide), Settings › Show Hidden, FroggerHidden | `unhide.py` |
 | Up Next: open, remove, play from, clear | `upnext.py` |
+| Play After Album: the queue waits for the album playing | `afteralbum.py` |
+| Clicker: Speaker, Headphones, Both; Click Volume; the piezo while paused | `clicker.py` |
 | The main menu's Queue row | `queuerow.py` |
 | Quick settings (hold Menu), its Sleep | `quicksettings.py` |
 | Settings' feature switches, each off | `switches.py` |
@@ -87,6 +89,9 @@ orders; docs/re-notes.md).
 
 - GPIOA bit 5 high means Hold is on, and 2.3 drops every key.
 - emupod's own `make_screen()` comes back blank after an idle stretch; use `Pod.screen()`.
-- The emulated audio stops after about 2000 sample FIQs, so the clock stays at 0:00. Scripts
-  scrub to stand in for listening.
+- Songs really play (emupod-gen3.patch models 2.3's I2S FIFO `0xc0002540`, its free slots at
+  `0xc000251c`, and the FIQ dispatcher's source bit at `0xcf00100c`/`0xcf001030`): the clock and the
+  progress bar move, and a song plays on into the next. A script that compares Now Playing's pixels
+  pauses first; one that checks a start position reads it where the player sets it
+  (`resume.py`'s `started`). The emulated FIQ still falls behind now and then (`audio_late`).
 - More on the emulator: `docs/power-and-emupod.md`.

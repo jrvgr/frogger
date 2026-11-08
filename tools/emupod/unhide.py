@@ -170,7 +170,7 @@ check("Albums: three", rd(lib + 0x894) == 3, str(rd(lib + 0x894)))
 p.scroll(2); p.settle(); p.run(300_000)                                 # Beta
 check("hold Beta (one hidden, one shown): Hide", hold("4_beta") == 0); close()
 p.scroll(1); p.settle(); p.run(300_000)                                 # Gamma
-check("hold Gamma > Hide", hold("4_gamma") == 0); pick(3)
+check("hold Gamma > Hide", hold("4_gamma") == 0); pick(4)
 check("  Echo, Bravo hidden, Gamma listed", hidden() == ["Bravo", "Delta", "Echo"] and rd(lib + 0x894) == 3, str(hidden()))
 check("hold Gamma: Show", hold("4_gamma2") == 1); close()
 to_menu(2); music(1)                                                    # Artists
@@ -185,7 +185,7 @@ p.scroll(-8); p.scroll(5); p.settle(); p.run(300_000)                   # Moon
 check("hold Moon > Hide", hold("5_moon") == 0); pick(5)
 to_menu(2); music(2)
 p.scroll(3); p.settle(); p.run(300_000)                                 # Gamma
-check("Albums: hold Gamma > Hide", hold("5_gamma") == 0); pick(3)
+check("Albums: hold Gamma > Hide", hold("5_gamma") == 0); pick(4)
 check("  Moon, Echo, Bravo (and Delta) hidden", hidden() == ["Bravo", "Delta", "Echo", "Moon"], str(hidden()))
 to_menu(2)
 show_hidden(0)

@@ -101,7 +101,7 @@ p.press("menu", after_us=1_500_000); p.settle()                        # Music
 p.scroll(-1); p.settle(); p.run(300_000); p.press("select", after_us=1_500_000); p.settle()   # Albums
 check("Albums", rd(lib + 0x894) == 3, "albums %d" % rd(lib + 0x894))
 p.scroll(3); p.settle(); p.run(300_000)                                # Gamma
-hold("4_popup"); pick(3); p.shot("h2v_4_hidden.png", 1)                # Hide
+hold("4_popup"); pick(4); p.shot("h2v_4_hidden.png", 1)                # Hide
 check("Hide Gamma: Albums has Alpha, Beta", rd(lib + 0x894) == 2, "albums %d" % rd(lib + 0x894))
 
 p.press("menu", after_us=1_500_000); p.settle()                        # Music

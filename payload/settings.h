@@ -33,6 +33,25 @@
 #define FLASH_OFF  0
 #define FLASH_AUTO 1
 #define FLASH_ON   2
+/* "Click Volume" (clicker.c), after Flash Storage: the headphones click's
+ * level, Quiet (the default), Medium or Loud, in prefs bits 14-15. */
+#define FROGGER_ITEM_VOLUME  0x290a     /* FROGGER_ITEM_FLASH + 1 */
+#define FROGGER_STR_VOLUME   0x3f2d     /* "Click Volume" */
+#define FROGGER_STR_QUIET    0x3f2e     /* its values: Quiet, Medium, Loud */
+#define FROGGER_STR_MEDIUM   0x3f2f
+#define FROGGER_STR_LOUD     0x3f30
+/* Apple's Clicker row, Off / Speaker / Headphones / Both (clicker.c): Off is
+ * Apple's (prefs bit 0 clear); On is bit 0 set and bits 30-31 the place. */
+#define SETTING_CLICKER      0x282d     /* Apple's Clicker item */
+#define FROGGER_STR_SPEAKER  0x3f31
+#define FROGGER_STR_PHONES   0x3f32     /* "Headphones" */
+#define FROGGER_STR_BOTH     0x3f33
+#define CLICK_SPEAKER 0
+#define CLICK_PHONES  1
+#define CLICK_BOTH    2
+#define CLICK_QUIET   0
+#define CLICK_MEDIUM  1
+#define CLICK_LOUD    2
 
 /* The cover-art bitmap (art.c). No View shows this id yet; build with
  * -DFROGGER_BMAP_ART=0x25ed to see the test picture in place of a small
@@ -42,7 +61,15 @@
 #endif
 
 /* Bits in Apple's prefs flags word (prefs+0xb04) that hold our settings, so
- * they're saved with Apple's. Apple uses bits 0 and 1. */
+ * they're saved with Apple's. Apple uses bits 0 (Clicker) and 1 only: its
+ * setter (0xdafc4: 0xdb714, 0xdb744) sets and clears just those, its readers
+ * (0xa4384, 0xe63b8...) test 1 and 2. Ours: 14-15 Click Volume, 16-29 below,
+ * 30-31 where the clicker clicks. */
+#define FROGGER_PREF_VOLUME_SHIFT 14
+#define FROGGER_PREF_VOLUME       (3u << FROGGER_PREF_VOLUME_SHIFT)
+#define FROGGER_PREF_CLICKER      1u    /* Apple's: Clicker On */
+#define FROGGER_PREF_PLACE_SHIFT  30
+#define FROGGER_PREF_PLACE        (3u << FROGGER_PREF_PLACE_SHIFT)
 #define FROGGER_PREF_SHOW_HIDDEN (1u << 16)
 #define FROGGER_PREF_NO_LETTERS  (1u << 17)     /* set: Jump by Letter is Off (On by default) */
 #define FROGGER_PREF_NO_RESUME   (1u << 18)     /* set: Resume Mixes is Off (On by default) */
@@ -57,7 +84,7 @@
 #define FROGGER_PREF_TIMER       (7u << FROGGER_PREF_TIMER_SHIFT)
 #define FROGGER_PREF_FLASH_SHIFT 28
 #define FROGGER_PREF_FLASH       (3u << FROGGER_PREF_FLASH_SHIFT)
-#define FROGGER_ITEMS (4 + FEATURES)            /* our rows, after Clicker */
+#define FROGGER_ITEMS (5 + FEATURES)            /* our rows, after Clicker */
 
 /* Apple's values are the string ids of what the row shows. */
 #define SETTING_ON     0x279d   /* "On" */
@@ -92,6 +119,11 @@ int frogger_on(unsigned feature);
 unsigned frogger_flash_mode(void);
 extern const char *const frogger_feature_labels[FEATURES];
 extern const char frogger_label_flash[], frogger_label_auto[];
+/* Click Volume's and the Clicker's labels and values (or 0: not one). */
+const char *clicker_string(uint32_t id);
+/* CLICK_SPEAKER, CLICK_PHONES or CLICK_BOTH; CLICK_QUIET.. (0 before the prefs are up). */
+unsigned clicker_place(void);
+unsigned clicker_volume(void);
 #endif
 
 #endif

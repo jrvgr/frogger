@@ -20,5 +20,7 @@ uint32_t browse_playing(void);
 int browse_row_hidden(int kind, uint32_t row);
 /* Up Next: the songs list shows these items of list. */
 void browse_items(uint32_t list, const uint32_t *idx, unsigned n, int fresh, uint32_t row);
+/* Whether the songs array is still the one browse_items put in. */
+int browse_items_shown(void);
 
 #endif

@@ -233,6 +233,7 @@ little-endian u32 at **file offset `0xafc`**, and all of Frogger's switches live
 | --- | --- | --- |
 | 0 | Clicker (Apple's) | On |
 | 1 | Apple's, see re-notes | |
+| 14–15 | Click Volume (`payload/clicker.c`): 0 Quiet, 1 Medium, 2 Loud | (a value; the headphones click only) |
 | 16 | Show Hidden | On (off by default) |
 | 17 | Jump by Letter | Off |
 | 18 | Resume Mixes | Off |
@@ -240,6 +241,7 @@ little-endian u32 at **file offset `0xafc`**, and all of Frogger's switches live
 | 24–26 | the backlight timer's last value other than Off and Always On | 0 = none yet |
 | 27 | Lock Cover (`FEATURE_LOCK`) | Off |
 | 28–29 | Flash Storage (`payload/flash.c`): 0 Off, 1 Auto, 2 On | (a value, not a flag) |
+| 30–31 | Where the Clicker clicks, while bit 0 is set: 0 Speaker, 1 Headphones, 2 Both | (a value; Off is bit 0 clear) |
 
 Found on a real iPod 3G (2026-11-03): with a copy of the file taken, Settings › Show Hidden was
 switched On, the iPod put to sleep (hold Play) and remounted; the only change in the file was bit 16
