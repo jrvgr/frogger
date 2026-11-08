@@ -987,8 +987,11 @@ boundaries come from `push {..., lr}` prologues, so they are approximate.
   codec writes, no anti-pop wait (resume 18 ms). `click_paused` does the same and feeds the FIFO
   itself (a word per channel, the sample in bits 16-31, as the FIQ), then puts I2S back off. Only
   when `0x140614`'s copy of the registers (`0x44be49c`, a halfword `reg << 9 | value` each) says R9
-  active and R6 bits 3, 4, 7 clear: before the first song since boot it's the piezo. Not seen:
-  Sleep, a long idle (the copy should follow Apple's own power-down), pops (emupod has no analog).
+  active and R6 bits 3, 4, 7 clear; otherwise (no song since boot, or powered down) it first calls
+  Apple's playback setup of the codec, `0x13fc38(mode)` (`0x697d0` maps the rate: 32 kHz 6, 44.1
+  kHz 8, 88.2 kHz 12, 96 kHz 7; mode 8 here), which writes R9/R8/R7 and ends with R6 = `0x67`, as
+  a song's start does. Not seen: Sleep, a long idle (the copy should follow Apple's own power-down),
+  pops (emupod has no analog).
 - **Settings.** Apple's Clicker row cycles Off, Speaker, Headphones, Both (its function, fn 401,
   sends the value it wants, On or Off; quick settings' row sends the toggle `0x282f`): Off and On
   go through Apple's setter (bit 0, `obj+0x33`), the place is prefs bits 30-31, Click Volume 14-15.

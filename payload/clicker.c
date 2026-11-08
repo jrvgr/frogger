@@ -28,11 +28,12 @@
  * does (0x1258b8: the word clock's edges, I2S off, FIFO reset, 16 zeros,
  * 0xc0002500 = 0xd), feeds the FIFO itself (a word per channel, the sample
  * in the top half, as the FIQ does), lets it drain and puts back Apple's
- * paused state. Only when Apple's copy of the codec's registers (0x140614
- * keeps them at 0x44be49c) says it's active, DAC and output powered: before
- * the first song since boot, and whenever Apple has powered it down, the
- * click goes to the piezo, as it does when the pointers aren't in the ring,
- * or too little is decoded while a song plays.
+ * paused state. When Apple's copy of the codec's registers (0x140614 keeps
+ * them at 0x44be49c) says it isn't active with DAC and output powered
+ * (before the first song since boot, or after Apple powered it down), Apple's
+ * own playback setup (0x13fc38, mode 8: 44.1 kHz) brings it up first. The
+ * piezo is left for when that fails, or for a song playing with its pointers
+ * out of the ring or too little decoded.
  *
  * The click: about 1 kHz square for 4 ms, rounded off by a one-pole
  * low-pass (as the piezo's mass does), 10 ms with its ring-out, at 44.1 kHz
@@ -56,6 +57,8 @@
 #define WM_REGS         ((volatile uint16_t *)0x044be49c)   /* Apple's copy of the codec's registers: reg << 9 | value */
 #define WM_POWER        6                                   /* bits 3 DAC, 4 output, 7 all: powered down */
 #define WM_ACTIVE       9                                   /* bit 0 */
+#define codec_open      ((void (*)(uint32_t mode))0x13fc38)  /* Apple's playback setup of the codec, mode 8: 44.1 kHz (0x697d0) */
+#define CODEC_44K       8
 #define I2S_FREE()      ((I2S_FIFO_CFG >> 23) & 14)
 #define FEED_US         2000            /* the FIFO not taking a word this long: no clock, give up */
 
@@ -72,7 +75,7 @@ static const int16_t click_peak[3] = { 4125, 8231, 16423 };
 
 static int16_t click[CLICK_FRAMES];     /* peak 32767 */
 
-uint32_t clicker_mixed, clicker_paused, clicker_fallback;   /* counts, for a look from emupod or a debug record */
+uint32_t clicker_mixed, clicker_paused, clicker_fallback, clicker_opened;   /* counts, for a look from emupod or a debug record */
 
 static uint32_t prefs_flags(void)
 {
@@ -189,16 +192,31 @@ static int feed(uint32_t w)
     return 1;
 }
 
-/* The click at `level` on its own, nothing playing; 0 if it can't (the codec
- * isn't up, I2S isn't in Apple's paused state, or its clock doesn't run). */
+static int codec_up(void)
+{
+    return (WM_REGS[WM_ACTIVE] & 1) && !(WM_REGS[WM_POWER] & 0x98);
+}
+
+/* The click at `level` on its own, nothing playing; 0 if it can't (I2S isn't
+ * in Apple's paused state, the codec won't come up, or its clock doesn't
+ * run). With the codec down (no song since boot, or Apple powered it down),
+ * Apple's own playback setup brings it up first, as a song's start does. */
 static int click_paused(unsigned level)
 {
     int32_t gain = click_peak[level];
     uint32_t i, t0;
     int ok = 1;
 
-    if (!(WM_REGS[WM_ACTIVE] & 1) || (WM_REGS[WM_POWER] & 0x98) || (COP_INT_EN & 0x20) || I2S_CTL)
+    if ((COP_INT_EN & 0x20) || I2S_CTL)
         return 0;
+    if (!codec_up()) {
+        t0 = USEC_TIMER;
+        codec_open(CODEC_44K);
+        debug_note(DEBUG_TAG('c', 'k', 'o', 'p'), USEC_TIMER - t0, WM_REGS[WM_ACTIVE] | (uint32_t)WM_REGS[WM_POWER] << 16);
+        clicker_opened++;
+        if (!codec_up() || (COP_INT_EN & 0x20) || I2S_CTL)
+            return 0;
+    }
     debug_note(DEBUG_TAG('c', 'k', 'p', '0'), WM_REGS[WM_ACTIVE] | (uint32_t)WM_REGS[WM_POWER] << 16, I2S_FIFO_CFG);
     if (!click[CLICK_HALF])
         click_make();
