@@ -24,6 +24,7 @@ void queue_begin_add(void);
 void queue_end_add(void);
 void queue_keep(uint32_t lib);
 void queue_add_items(uint32_t src, const uint32_t *idx, unsigned n);
+void queue_add_after_album(uint32_t src);
 /* Up Next (holdmenu.c) */
 uint32_t queue_list(void);
 unsigned queue_waiting(uint32_t *idx, unsigned max);

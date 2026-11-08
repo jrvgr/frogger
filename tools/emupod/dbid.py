@@ -157,6 +157,19 @@ class Run:
         return self.rd(SYM["art_shown"])
 
 
+def counts_written(p, limit_s=30):
+    """Run until Apple writes Play Counts (0xf4d6c, counts_hook: FroggerSkips, FroggerBookmarks), as
+    it does once the disk goes idle after a song change; how long that takes depends on emupod's
+    disk and sound timing, so wait for it, up to limit_s, rather than a fixed time."""
+    p.m.hook_start([0xf4d6c], None, 0)
+    for _ in range(limit_s):
+        p.run(1_000_000)
+        if p.m.hook_log():
+            break
+    p.m.hook_start([], None, 0)
+    p.run(1_000_000)                                            # the files written after it
+
+
 def by_title(titles):
     return sorted(titles)
 
@@ -179,12 +192,12 @@ def write():
     r.row(songs.index("Tone A again")); p.press("select", after_us=2_000_000); p.settle()
     r.play_to(5000); at = r.pos()
     p.press("next", after_us=1_000_000); p.settle()
-    p.run(5_000_000)                                            # Apple's 'prwp': Play Counts, FroggerSkips
+    counts_written(p)                                           # Apple's 'prwp': Play Counts, FroggerSkips
     check("Next at %d ms: Tone A again skipped" % at, r.skips() == {"Tone A again": 1}, r.skips())
     r.menu(); r.row(songs.index("Long Mix")); p.press("select", after_us=2_000_000); p.settle()
     r.scrub(-60); at = r.pos()
     p.press("next", after_us=2_000_000); p.settle()
-    p.run(5_000_000)
+    counts_written(p)
     bm = r.bookmark("Long Mix")
     check("Long Mix left at %d ms: its bookmark" % at, at > 30_000 and abs(bm - at) < 3000, bm)
     p.shot("dbid_write.png", 1)
@@ -258,7 +271,7 @@ def old():
     got = r.cover()
     check("FroggerArt v1: Tone A (position 0) has cover 4", got == 4, hex(got))
     p.press("next", after_us=1_000_000); p.settle()             # a song change: Play Counts, FroggerSkips
-    p.run(5_000_000)
+    counts_written(p)
     del r, p
     try:
         f = podinfo.FroggerFile(get(OLD, "FroggerSkips"), podinfo.SKIPS)

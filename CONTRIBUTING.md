@@ -79,8 +79,8 @@ JSON. Your own library's baseline stays in `build/emupod-work/`. CI's job summar
 and any UI-thread disk I/O. A known failure is marked `xfail` (not strict) with the reason. When a
 fix lands, the test turns XPASS: then drop the mark.
 
-The emulator still can't show everything (the audio stops early, the disk is fast when it does
-answer). Before a release, go through [docs/device-checklist.md](docs/device-checklist.md) on a
+The emulator still can't show everything (its sound FIQ falls behind now and then, the disk is fast
+when it does answer). Before a release, go through [docs/device-checklist.md](docs/device-checklist.md) on a
 real iPod.
 
 ## Layout
@@ -129,7 +129,7 @@ A pull request's CI run adds a **Test results** check (every test, failures at t
 summary per job and one comment with the coverage of `tools/` and which features have an
 emupod check. It's a report: no coverage number fails a job.
 - Tried on a real 3G, or labelled `needs device test`. The emulator doesn't model everything:
-  audio stops early, the screen never goes dark, Apple's image isn't read-only.
+  the sound's timing is rough, the screen never goes dark, Apple's image isn't read-only.
 
 ## Code
 

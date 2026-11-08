@@ -393,7 +393,7 @@ Half the awake time for the same reads: Apple's holds (15 s from the database lo
 menus' and the refill's) chain into one 22 s stretch; cut to 1 s, the disk sleeps between boot,
 the menus and the refill, at the cost of two more wakes (each instant on a bridge that answers at
 once). During playback alone the saving is 1 s per refill (2.05 → 1.03 s). emupod's audio
-doesn't run the music cache down (Part A: "audio stops early"), so a play shows only the first
+didn't run the music cache down then (Part A: "audio stops early", since fixed: tools/emupod/README.md), so a play showed only the first
 refill; on a device a refill comes about every 9-10 minutes of 320 kbps music (23 MB of cache),
 each 1 s shorter, and after any browsing that touches the disk 1-14 s shorter.
 

@@ -63,6 +63,12 @@ def pytest_configure(config):
     # One id for the whole run, shared with pytest-xdist's workers, so the emupod image is made once.
     if not hasattr(config, "workerinput"):
         config.frogger_run = uuid.uuid4().hex
+        # One run at a time in build/emupod-work (runtests.lock_work): taken here, in the controller,
+        # so this run's xdist workers share it and a second pytest or runtests.py waits for it.
+        if os.name != "nt" and (ROOT / "build/emupod-work").is_dir():
+            sys.path.insert(0, str(ROOT / "tools/emupod"))
+            import runtests
+            config.frogger_lock = runtests.lock_work()
     else:
         config.frogger_run = config.workerinput.get("testrunuid", "worker")
 
