@@ -12,7 +12,7 @@ checking as it goes (exits 1 on a wrong step; screenshots uh_*.png):
    Artists: hold Art Two: Show; Show: Echo and Bravo shown. Hold Art One: Hide.
 5. Songs: hold Moon > Hide; Albums: hold Gamma > Hide.
 6. Settings > Show Hidden off: Albums has Alpha and Beta (Kite shown), Artists only Art One.
-   Apple's image unchanged. FroggerHidden (version 2): Kite shown; Moon, Echo, Bravo hidden.
+   Apple's image unchanged. FroggerHidden (version 3, by key): Kite shown; Moon, Echo, Bravo hidden.
 
     unhide.py reboot   # afterwards, in a new process: boot that card again (Show Hidden
                        # off: emupod keeps no prefs); Albums still has Alpha and Beta,
@@ -197,8 +197,8 @@ check("Apple's image unchanged", not diff, "%d words, first %#x" % (len(diff), d
 out = hmcard.mtools(card, "mtype", "::/iPod_Control/iTunes/FroggerHidden", capture_output=True).stdout
 ver, size, _, n = struct.unpack_from("<HHII", out, 4) if len(out) >= 20 else (0, 0, 0, 0)
 ents = {}
-for i in range(n if size == 12 else 0):
-    pos, tid, flags = struct.unpack_from("<III", out, 20 + 12 * i)
-    ents[[t for t, v in hmcard.TID.items() if v == tid][0]] = "shown" if flags & 1 else "hidden"
-check("FroggerHidden v2: Kite shown; Moon, Echo, Bravo", out[:4] == b"FRGH" and ver == 2
+for i in range(n if size == 24 else 0):
+    dbid, tid, _, _, flags = struct.unpack_from("<QIIII", out, 20 + 24 * i)
+    ents[[t for t, v in hmcard.TID.items() if v == tid and dbid == 0x1000 + v][0]] = "shown" if flags & 1 else "hidden"
+check("FroggerHidden v3: Kite shown; Moon, Echo, Bravo", out[:4] == b"FRGH" and ver == 3
       and ents == {"Kite": "shown", "Moon": "hidden", "Echo": "hidden", "Bravo": "hidden"}, "%r v%d %s" % (out[:4], ver, ents))

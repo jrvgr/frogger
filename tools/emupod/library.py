@@ -29,9 +29,10 @@ W = ROOT / "build/emupod-work"
 sys.path.insert(0, str(HERE))
 import itdb  # noqa: E402
 import mkart  # noqa: E402
+from podinfo import Key  # noqa: E402 (mkart put tools/ on the path)
 
 itdb.MHOD_TYPES["albumartist"] = 22
-VERSION = 1                     # bump when the generated library changes: cards made before are remade
+VERSION = 2                     # bump when the generated library changes: cards made before are remade
 SONGS, ALBUMS, ARTISTS, COMPILATIONS, PLAYLISTS = 5000, 400, 800, 40, 20
 LOC = ":iPod_Control:Music:F%02d:A%03d.mp3"     # one stub per album: 32 MB in all, more than the music cache holds
 WORDS = ("amber glass river night north velvet echo paper signal harbour quiet ember silver lantern "
@@ -92,7 +93,7 @@ def generate():
     per = [SONGS // ALBUMS] * ALBUMS
     for i in range(SONGS - sum(per)):
         per[i] += 1
-    tracks, table, covers = [], [], []
+    tracks, entries, covers = [], [], []
     tid = 1000
     for i, ((aa, album, who, comp), n) in enumerate(zip(albums, per)):
         cover = None
@@ -111,16 +112,17 @@ def generate():
             h[0x1e] = int(comp)                                       # compilation
             struct.pack_into("<II", h, 0x2c, k + 1, n)               # track number, of
             tracks.append((tid, bytes(h)))
-            table.append(cover if cover is not None else 0xffff)
+            if cover is not None:                                     # FroggerArt v2: by key
+                entries.append((Key(0x1000 + tid, tid, size, 10_000), cover))
             tid += 1
     ids = [t for t, _ in tracks]
     lists = [itdb.mhyp("iPod", ids)]
     for p in range(PLAYLISTS):
         n = rng.choice([8, 25, 60, 150, 400, 1200])
-        lists.append(itdb.mhyp(name(rng, 1, 3) + " Mix", rng.sample(ids, n), master=False))
+        lists.append(itdb.mhyp(name(rng, 1, 3) + " Mix", rng.sample(ids, n), master=False, pid=0xabcdf0 + p))
     db = itdb.mhbd([itdb.mhsd(1, itdb.mhl(b"mhlt", [h for _, h in tracks])), itdb.mhsd(2, itdb.mhl(b"mhlp", lists))])
     files = dict.fromkeys(LOC % (i % 50, i) for i in range(ALBUMS))
-    return db, mkart.froggerart(table, covers), files
+    return db, mkart.froggerart(entries, covers), files
 
 
 def locations(db):

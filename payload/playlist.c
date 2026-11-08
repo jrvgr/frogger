@@ -13,9 +13,13 @@
  * FroggerPlaylist_I (I: the playlist's index in lib+0x870), and the first
  * time Playlists opens (playlist_load_saved) each is read back with Apple's
  * loader (0xc5a90) and, if that works, takes the synced contents' place.
- * The files carry the iTunesDB's stamp, as Apple's do, so after a sync the
- * loader turns them down; Crate reads them on the next sync to keep what
- * was added.
+ * Those carry the iTunesDB's stamp, as Apple's do, so after a sync the
+ * loader turns them down. So a playlist with a persistent id (mhyp+0x1c,
+ * the object's +0x14) gets FroggerPlaylist_<id> instead (playlist.h), its
+ * songs by key (tracks.h), read back by playlist_load_saved itself, so it
+ * outlasts another app's sync as long as the playlist and its songs do;
+ * FroggerPlaylist_I is still read for a playlist that has no such file.
+ * Crate reads them on the next sync to keep what was added.
  *
  * Emptying a playlist goes through list_empty, not Apple's 0x465b0, whose
  * ending also resets the list on screen: going back to it, it'd be empty.
@@ -24,6 +28,7 @@
 #include <stdint.h>
 #include "playlist.h"
 #include "disk.h"
+#include "tracks.h"
 
 #define UI_OBJECT       (*(volatile uint32_t *)0x43580c)
 #define LIB_OTG         (0x48 / 4)
@@ -60,6 +65,13 @@
 #define lib_tracks      ((uint32_t (*)(uint32_t root))0x6fcfc)
 #define db_stamp        ((uint32_t (*)(void))0x77600)
 #define PLAYER_LIST     (0x2a4 / 4)
+#define LIST_ID         (0x14 / 4)      /* the persistent id, mhyp+0x1c (0xc4370), 2 words */
+/* A list's songs: item i in the list's own order (1), its track record
+ * (0x7cb44: item+0x20), and appending a track record (0x363cc, as the
+ * On-The-Go reader 0xc5a90 does with each of its songs). */
+#define item_at         ((uint32_t (*)(uint32_t list, uint32_t order, uint32_t zero, uint32_t i))0x78d60)
+#define item_track      ((uint32_t (*)(uint32_t item))0x7cb44)
+#define append_track    ((uint32_t (*)(uint32_t list, uint32_t track, uint32_t zero))0x363cc)
 
 static struct {
     uint32_t scratch;
@@ -164,6 +176,71 @@ static void *numbered_path(const char *prefix, uint32_t n, int write)
     return find_path(path, name) == 0 ? path : 0;
 }
 
+/* FroggerPlaylist_<id> of `list`, or 0 if the playlist has no id. */
+static const char *id_name(uint32_t list)
+{
+    static char name[16 + 16 + 1];
+    static const char prefix[] = "FroggerPlaylist_", hex[] = "0123456789ABCDEF";
+    uint32_t lo = word(list, LIST_ID), hi = word(list, LIST_ID + 1), i;
+
+    if (!lo && !hi)
+        return 0;
+    for (i = 0; i < 16; i++)
+        name[i] = prefix[i];
+    for (i = 0; i < 16; i++)
+        name[16 + i] = hex[((i < 8 ? hi : lo) >> (28 - 4 * (i & 7))) & 15];
+    name[32] = 0;
+    return name;
+}
+
+/* FroggerPlaylist_<id>'s songs, appended to dest: 0 if there's no such file. */
+static int read_keyed(uint32_t list, uint32_t dest)
+{
+    struct playlist_file_header h;
+    struct track_key k;
+    const char *name = id_name(list);
+    uint32_t i, track;
+    int p;
+
+    if (!name || !file_open(name))
+        return 0;
+    if (file_read(&h, sizeof h) && h.magic == PLAYLIST_FILE_MAGIC && h.version == PLAYLIST_FILE_VERSION
+        && h.entry_size == sizeof k && h.id_lo == word(list, LIST_ID) && h.id_hi == word(list, LIST_ID + 1))
+        for (i = 0; i < h.count && file_read(&k, sizeof k); i++)
+            if ((p = tracks_find(&k)) >= 0 && (track = tracks_record((uint32_t)p)) != 0)
+                append_track(dest, track, 0);
+    file_close();
+    return 1;
+}
+
+/* Writes FroggerPlaylist_<id>: 0 if the playlist has no id. */
+static int write_keyed(uint32_t list)
+{
+    struct playlist_file_header h = { PLAYLIST_FILE_MAGIC, PLAYLIST_FILE_VERSION, sizeof(struct track_key), 0, 0, 0, 0 };
+    struct track_key k;
+    const char *name = id_name(list);
+    uint32_t i, pos, n = list_count(list);
+
+    if (!name)
+        return 0;
+    if (!tracks_ready() || !file_create(name))
+        return 1;
+    h.stamp = db_stamp();
+    h.id_lo = word(list, LIST_ID);
+    h.id_hi = word(list, LIST_ID + 1);
+    for (i = 0; i < n; i++)             /* the songs that have keys: the count first */
+        if (tracks_position(item_track(item_at(list, 1, 0, i)), &pos) && pos < tracks_count())
+            h.count++;
+    file_write(&h, sizeof h);
+    for (i = 0; i < n; i++)
+        if (tracks_position(item_track(item_at(list, 1, 0, i)), &pos) && pos < tracks_count()) {
+            tracks_key(pos, &k);
+            file_write(&k, sizeof k);
+        }
+    file_close();
+    return 1;
+}
+
 /* Writes the playlist `list` to an On-The-Go file at p. */
 static void save_to(uint32_t lib, uint32_t list, void *p)
 {
@@ -192,8 +269,11 @@ void playlist_load_saved(void)
             continue;
         if (list_count(pl.loading))
             list_empty(pl.loading);
-        if (!(p = numbered_path("FroggerPlaylist_", i, 0))
-            || read_otg_file(pl.loading, lib_tracks(word(lib, 0)), db_stamp(), p) != 0 || !list_count(pl.loading))
+        if (!read_keyed(list, pl.loading)
+            && (!(p = numbered_path("FroggerPlaylist_", i, 0))
+                || read_otg_file(pl.loading, lib_tracks(word(lib, 0)), db_stamp(), p) != 0))
+            continue;
+        if (!list_count(pl.loading))
             continue;
         if (list_count(list))
             list_empty(list);
@@ -248,7 +328,7 @@ void playlist_flush(void)
     pl.save_list = 0;
     if (word(target, LIST_SAVED_N))
         save_to(lib, target, numbered_path("OTGPlaylistInfo_", word(target, LIST_SAVED_N), 1));
-    else
+    else if (!write_keyed(target))
         save_to(lib, target, numbered_path("FroggerPlaylist_", pl.save_index, 1));
 }
 

@@ -121,9 +121,13 @@ it's where it's mounted, say `/media/$USER/IPOD`, on Windows its drive letter, `
 
 `tools/coverart.py /Volumes/IPOD` writes the covers (FroggerArt) from the pictures in the
 songs, your music folders (`--library`) or pictures you pick (`--map`); it needs Pillow, which
-`nix develop` has (or `uv run tools/coverart.py ...` fetches it). Run it after every sync.
-Without FroggerArt the cover page shows a frog instead of covers. Any other syncing app writes a
-new database, and the iPod then ignores Frogger's files from before it.
+`nix develop` has (or `uv run tools/coverart.py ...` fetches it). Run it after a sync that adds
+songs. Without FroggerArt the cover page shows a frog instead of covers.
+
+Frogger's files name songs by their persistent id (the dbid iTunes and most syncing apps keep), so
+hides, skips, covers, mix positions and songs added to playlists stay with their songs when another
+app syncs; a song that's gone takes its data with it. Every file and the iTunesDB fields Frogger
+uses: [docs/file-formats.md](docs/file-formats.md).
 
 ## Contributing
 
