@@ -22,6 +22,9 @@ PATTERNS = [lambda x, y: (x + y) * 4 // (2 * SIZE),                  # diagonal 
             lambda x, y: 3 * ((y // 6) & 1),                         # stripes
             lambda x, y: 3 if (x - 36) ** 2 + (y - 36) ** 2 < 600 else 0,   # a disc
             lambda x, y: x * 4 // SIZE]                              # left to right
+# The default card's covers: track 1 the gradient, track 2 the checkerboard (artplay.py checks the
+# screen against these).
+COVERS = PATTERNS[:2]
 
 
 def image(level):

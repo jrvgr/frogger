@@ -36,18 +36,18 @@ FEATURES = {
     "flash": ("Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto", ["flash.c"]),
     "dbid": ("Frogger's files after another app's sync: hides, skips, covers, bookmarks, playlists", ["tracks.c", "hide.c", "skips.c", "art.c", "resume.c", "playlist.c"]),
     "debugrecord": ("DEBUG=1: the debug record comes out whole in FroggerDebug on the next boot", ["debug.c"]),
+    "artplay": ("Covers changing on Next and Previous", ["art.c", "nowplaying.c"]),
+    "npcycle": ("The Now Playing cycle: the cover page, Apple's, scrubbing, rating and back", ["nowplaying.c"]),
+    "letters": ("Jump by Letter, the letter in the title; Settings › Jump by Letter off", ["letters.c", "settings.c"]),
+    "albumartist": ("Album artists: a compilation's songs under its album artist", ["artist.c"]),
+    "ownplaylist": ("Add to Playlist into a playlist of your own, saved and read back", ["playlist.c", "holdmenu.c"]),
 }
 # A check's exit code when the build it needs isn't the one made (debugrecord.py on a plain build).
 SKIP = 77
 CHECKS = list(FEATURES)
-# Features no check covers yet: the script that shows them, in screenshots only.
-UNCHECKED = {
-    "Covers changing on Next": "artplay.py",
-    "Jump by Letter": "letters.py",
-    "Album artists": "albumartist.py",
-    "Add to Playlist into a playlist of your own": "playlists.py",
-    "The Now Playing cycle": "npcycle.py",
-}
+# Features no check covers yet: the script that shows them, in screenshots only. (None now; CI's
+# summary lists any here.)
+UNCHECKED = {}
 
 
 def run(name):

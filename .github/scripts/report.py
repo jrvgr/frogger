@@ -89,8 +89,9 @@ def coverage(a):
     for check, (feature, files) in runtests.FEATURES.items():
         out.append(f"| {feature} | `{check}.py` | {', '.join(f'`{f}`' for f in files) or '—'} | "
                    f"{results.get(check, 'not run')} |")
-    out += ["", "**No check yet** (shown in screenshots only): "
-            + "; ".join(f"{f} (`{s}`)" for f, s in runtests.UNCHECKED.items()) + "."]
+    if runtests.UNCHECKED:
+        out += ["", "**No check yet** (shown in screenshots only): "
+                + "; ".join(f"{f} (`{s}`)" for f, s in runtests.UNCHECKED.items()) + "."]
     checked = {f for _, files in runtests.FEATURES.values() for f in files}
     untouched = sorted(p.name for p in (ROOT / "payload").glob("*.c") if p.name not in checked)
     if untouched:

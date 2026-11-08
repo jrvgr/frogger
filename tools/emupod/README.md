@@ -44,6 +44,11 @@ this folder.
 | The disk coming back after it stops answering (SRST, re-init, retry) | `diskhang.py` |
 | Settings › Flash Storage: the shorter disk hold, a hard drive left alone in Auto | `flash.py` |
 | Frogger's files after another app's sync (new ids, new order): hides, skips, covers, bookmarks, playlists; the old versions read | `dbid.py` |
+| Covers changing on Next and Previous | `artplay.py` |
+| The Now Playing cycle: the cover page, Apple's, scrubbing, rating and back | `npcycle.py` |
+| Jump by Letter, the letter in the title; Settings › Jump by Letter off | `letters.py` |
+| Album artists: a compilation's songs under its album artist | `albumartist.py` |
+| Add to Playlist into a playlist of your own, saved and read back | `ownplaylist.py` |
 | DEBUG=1: the debug record comes out whole in FroggerDebug on the next boot (skipped on a plain build) | `debugrecord.py` |
 
 Device realism (`tests/test_device.py`, CONTRIBUTING.md): on a big library card (`library.py`),
@@ -54,9 +59,9 @@ Device realism (`tests/test_device.py`, CONTRIBUTING.md): on a big library card 
 | No disk I/O on the UI thread, per scenario | `uidisk.py` |
 | The UI answering while the disk is hung | `stall.py` |
 
-Shown in screenshots only, not checked yet: covers changing on Next (`artplay.py`), Jump by Letter
-(`letters.py`), album artists (`albumartist.py`), Add to Playlist (`playlists.py`), the Now Playing
-cycle (`npcycle.py`), the hold menu and queue step by step (`holdmenu.py`).
+Shown in screenshots only, not checked: the hold menu and queue step by step (`holdmenu.py`).
+`playlists.py` traces the other ways into Add to Playlist (synced playlists, albums, artists, song
+orders; docs/re-notes.md).
 
 ## Other scripts
 
