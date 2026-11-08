@@ -689,9 +689,13 @@ flash_hold_hook:
     .ltorg
 
 /* 0x13c6e8 in the piezo task, as it starts the next tone (was: ldr r0,
- * [r7, r4, lsl #2], the tone's divisor; r1 still holds its length). If
- * click_tone (clicker.c) says so, the UART writes up to 0x13c710 are skipped:
- * the task then waits the tone's length in silence. */
+ * [r7, r4, lsl #2], the tone's divisor; r0 was the tone's end, stored at
+ * [r5, #12], and r1 still holds its length). If click_tone (clicker.c) says
+ * so, the piezo stays quiet: the UART setup is skipped, and so is the pump
+ * that makes the sound (0x13c724-0x13c7c4: 0xaa bytes into the UART for as
+ * long as a tone is on, at the last divisor set): the tone ends now, the
+ * ring moves on as at 0x13c710-0x13c720, and the task goes back to its wait
+ * at 0x13c658. */
     .global click_hook
 click_hook:
     ldr     r0, [r7, r4, lsl #2]
@@ -699,6 +703,15 @@ click_hook:
     bl      click_tone
     cmp     r0, #0
     pop     {r0, r1, r2, r3, r12, lr}
-    addne   lr, lr, #(0x13c710 - 0x13c6ec)
-    bx      lr
+    bxeq    lr
+    ldr     r0, [r5, #12]
+    sub     r0, r0, r1              @ the tone's end: now
+    str     r0, [r5, #12]
+    ldr     r0, [r5, #4]            @ the ring's next tone
+    add     r0, r0, #1
+    cmp     r0, #16
+    moveq   r0, #0
+    str     r0, [r5, #4]
+    ldr     pc, =0x13c658
 
+    .ltorg
