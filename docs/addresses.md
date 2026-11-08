@@ -52,7 +52,7 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 
 | Address | Original | Hook | Entry | Back at | What it does | Used by | Status | Details |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `0xc4b30` | `0xe59d0430` `ldr r0, [sp, #1072]` | `track_hook` | BL | | Track loader `0xc4a68`, each new track record (`r4`; mhit at `sp+0x420`, index `[sp+0x4bc]`): note where it is (covers); flag hidden tracks | `art.c`, `hide.c` | confirmed (emupod) | [Hidden-songs hooks][itdb], [Playlist loader][plload] |
+| `0xc4b30` | `0xe59d0430` `ldr r0, [sp, #1072]` | `track_hook` | BL | | Track loader `0xc4a68`, each new track record (`r4`; mhit header at `sp+0x420`, its dbid at `sp+0x490`, index `[sp+0x4bc]`): its position and key for Frogger's files and the covers; flag hidden tracks | `tracks.c`, `hide.c` | confirmed (emupod) | [Hidden-songs hooks][itdb], [Playlist loader][plload] |
 | `0xc4e64` | `0xe59d0414` `ldr r0, [sp, #1044]` | `mhod_hook` | BL | | Before the mhod type switch (`[sp+0x414]`): album artist (22) read as artist | `artist.c` | confirmed (emupod) | [Album artists][aa] |
 | `0xc431c` | `0xe3a07001` `mov r7, #1` | `mhyp_hook` | BL | | Playlist loader `0xc4244`, each mhyp: is it the master (`[sp+0xc0]`)? | `hide.c` | confirmed (emupod) | [Playlist loader][plload] |
 | `0xc4768` | `0xe5dd1030` `ldrb r1, [sp, #48]` | `mhip_hook` | BL | | After an mhip joined: remember the master playlist (`[sp+0xa8]`) | `hide.c` | confirmed (emupod) | [Playlist loader][plload] |
@@ -88,6 +88,7 @@ the return address. **BL** hooks return with `bx lr` to the next instruction.
 | `0x9dbac` | `0xe5940190` `ldr r0, [r4, #400]` | `flash_id_hook` | BL | | ATA dispatcher `0x9da1c`, op `0xEC`, as the IDENTIFY ends (`r4` the ATA object, error at `+0x190`, the 512 bytes at `[+0x17c]`): keep words 0 and 217 and the model for Auto | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
 | `0x57820` | `0xe92d4010` `push {r4, lr}` | `flash_hold_hook` | B | `0x57824` | First instruction of the disk arbiter's `hold(client, ms)`: with Flash Storage on, `ms` is cut to 1000 | `flash.c` | confirmed (emupod) | [Flash Storage][flash] |
 | `0x13c6e8` | `0xe7970104` `ldr r0, [r7, r4, lsl #2]` | `click_hook` | BL | `0x13c6ec`, or `0x13c710` past the UART writes | The piezo task starting its next tone (`r0` the divisor, `r1` its length; a click is `0x64`, `0x64`): Headphones mixes a click into the music and skips the piezo, Both does both | `clicker.c` | confirmed (emupod) | [The clicker][clicker] |
+| `0x94984` | `0xeb002a3f` `bl 0x9f288` | `preload_hook` (C) | BL | | The playback tick `0x94918` (UI thread), its check before the next-song preload (`0x94a58` → `0xbca48`, which takes the volume lock): calls `0x9f288` itself, and says not now while `disk_stalled` (a read stuck 250 ms), so a hung reader holding the lock doesn't freeze the UI | `disk.c` | confirmed (emupod) | [The disk that stops answering][disk] |
 
 Other patches, in `loader/patches.c` (bytes, not hooks):
 
@@ -106,18 +107,18 @@ Called from C through a cast `#define` (or from `hooks.S`). Signatures are as Fr
 | --- | --- | --- | --- | --- | --- |
 | **Files** | | | | | |
 | `0xb1d50` | `fw_volume()` | The volume word for a path | `art.c` | confirmed (device) | `payload/art.c` |
-| `0x403fc` | `fw_open(path, file, 0x20000, 'data')` | Opens a file to read (`path`: volume word, then a DOS-style name; `file`: 0x80 bytes) | `art.c` | confirmed (device) | `payload/art.c` |
-| `0x404ec` | `fw_read(file, &len, buf)` | Reads; `len` in/out | `art.c` | confirmed (device) | `payload/art.c` |
+| `0x403fc` | `fw_open(path, file, 0x20000, 'data')` | Opens a file to read (`path`: volume word, then a DOS-style name; `file`: 0x80 bytes) | `art.c`, `tracks.c` | confirmed (device) | `payload/art.c` |
+| `0x404ec` | `fw_read(file, &len, buf)` | Reads; `len` in/out | `art.c`, `tracks.c` | confirmed (device) | `payload/art.c` |
 | `0x4069c` | `fw_seek(file, offset, 0)` | Seeks from the start | `art.c` | confirmed (device) | `payload/art.c` |
-| `0x40110` | `fw_close(file)` | Closes | `art.c`, `debug.c` | confirmed (device) | `payload/art.c` |
-| `0x40474` | `fw_create(path, file, 0, 'data')` | Opens a file to write (as `0xf4ad4` does) | `debug.c` | confirmed (device) | `payload/debug.c` |
-| `0x407e8` | `fw_write(file, &len, data)` | Writes | `debug.c` | confirmed (device) | `payload/debug.c` |
-| `0x53a24` | `make_path(out, 'itun', "iPod_Control\\iTunes\\", name)` | Path to write (`out` 0x108 bytes); **creates or empties the file** | `playlist.c`, `debug.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
-| `0x7b3bc` | `find_path(out, name)` | Path to read; `-0x2b` if no such file | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
+| `0x40110` | `fw_close(file)` | Closes | `art.c`, `debug.c`, `tracks.c` | confirmed (device) | `payload/art.c` |
+| `0x40474` | `fw_create(path, file, 0, 'data')` | Opens a file to write (as `0xf4ad4` does) | `debug.c`, `tracks.c` | confirmed (device) | `payload/debug.c` |
+| `0x407e8` | `fw_write(file, &len, data)` | Writes | `debug.c`, `tracks.c` | confirmed (device) | `payload/debug.c` |
+| `0x53a24` | `make_path(out, 'itun', "iPod_Control\\iTunes\\", name)` | Path to write (`out` 0x108 bytes); **creates or empties the file** | `playlist.c`, `debug.c`, `tracks.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
+| `0x7b3bc` | `find_path(out, name)` | Path to read; `-0x2b` if no such file | `playlist.c`, `tracks.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | `0xf4ad4` | `write_otg_file(lib, path)` | Writes the playlist at `lib+0x48` as an On-The-Go file | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | `0xc5a90` | `read_otg_file(dest, tracks, stamp, path)` | Appends an On-The-Go file's songs to `dest` if it carries `stamp`; 0 = done | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | `0x6fcfc` | `lib_tracks([lib])` | The library's track list, for `0xc5a90` | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
-| `0x77600` | `db_stamp()` | The iTunesDB's file time, the files' stamp | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
+| `0x77600` | `db_stamp()` | The iTunesDB's file time, the files' stamp | `playlist.c`, `hide.c`, `skips.c`, `resume.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | **Lock Cover** | | | | | |
 | `0x7a9b8` | `hold_on()` | 1 while Hold is on (GPIOA bit 5 high; `0x91e54` compares the pin object `[0x420c30]` with its level `+0x10`), as `0xbe110` asks before dropping a key | `lock.c` | confirmed (emupod) | [Key input][keys] |
 | `0xa5004`, `0x81ee8`, `0xef738` | `pool_lock(pool)`, `pool_get(pool, key, &text, &bytes)` (0 = found), `pool_unlock(pool)` | A track's string from its pool, as `0xbfb44` does for `0xeb1e8`: the title is key `track+0x24` in pool `[track]+0xb0`, UTF-16 halfwords, the length in bytes | `lock.c` | confirmed (emupod) | [Lock Cover][lock] |
@@ -130,7 +131,9 @@ Called from C through a cast `#define` (or from `hooks.S`). Signatures are as Fr
 | `0x51250` | `copy_list(lib, src, key, 0, dest)` | Appends `src`'s songs to `dest` | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | `0x849a4` | `list_key(lib)` | The key `0xc0b30` passes to `0x51250` | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
 | `0x9f6e8` | `row_is_otg(ui, row)` | `0x08eb.ee`: is Playlists' row On-The-Go | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
-| `0x78d60` | `list_item(list, order, 0, i)` | Item `i` (order 1: the playlist's own; `0x26`: the master's) | `queue.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
+| `0x78d60` | `list_item(list, order, 0, i)` | Item `i` (order 1: the playlist's own; `0x26`: the master's) | `queue.c`, `playlist.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
+| `0x7cb44` | `item_track(item)` | An item's track record (`item+0x20`; 0 if flag bit 0 of byte `+0x1d`), as `0xc5a90` uses it | `playlist.c` | confirmed (emupod: `dbid.py`) | [Playlists made on the iPod][otgfiles] |
+| `0x363cc` | `append_track(list, track, 0)` | Appends a track record to a list (`0xc5a90` per song, the playlist loader per `mhip`); the record's library must be the list's (`[track]` = `[list+0xc]`) | `playlist.c` | confirmed (emupod: `dbid.py`) | [Playlists made on the iPod][otgfiles] |
 | `0xb8eb4` | `player_load(player, item)` | Loads an item to play (step of `0xb6c38`) | `queue.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | `0xda9a4` | `list_playing(list, shuffle)` | Marks the list as playing | `queue.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | `0xce9b0` | `list_touch(list)` | Step of `0xb6c38` after `0xda9a4` | `queue.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
@@ -241,6 +244,7 @@ Not called, but where the hooks sit or what they stand in for.
 | `player+0x2a4`, `+0x2a8` | The list playing, its current item (0 when stopped) | `queue.c`, `playlist.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | list `+0x24` → `+0x2c` | Song count | `queue.c`, `playlist.c` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | list `+0x124` | N of "New Playlist N" (0: synced) | `playlist.c` | confirmed (emupod) | [Playlists made on the iPod][otgfiles] |
+| list `+0x14`, `+0x18` | The playlist's persistent id, `mhyp+0x1c` (8 bytes, stored by the playlist loader at `0xc4370`); names `FroggerPlaylist_<id>` | `playlist.c` | confirmed (emupod: `dbid.py`) | [File formats][formats] |
 | item `+0`, `+0x10`, `+0x20` | Its list, its key, its track record | `queue.c`, `hooks.S` | confirmed (emupod) | [On-The-Go and the queue][otg] |
 | settings obj `+0x48`, `+0x54` | Last value string id; the library | `hooks.S`, `settings.c` | confirmed (emupod) | [Frogger's settings][fset] |
 | widget `+0x90`, `+0x9c` | Its cursor; row count | `letters.c` | confirmed (emupod) | [The wheel and the lists][wheel] |
@@ -356,7 +360,7 @@ they're free):
 | `0x3f14`, `0x3f15` | `Str ` | The letter in the title (two ids, taken in turn) | `letters.h` |
 | `0x3f17`–`0x3f1a` | `Str `, and the new popup rows' element ids | Hold menu: "Play Album Next", "Go to Album", "Go to Artist", "Hide" (`0x3f12` is Add to Playlist's row element too) | `holdmenu.h` |
 | `0x3f1b`, `0x3f1c`, `0x3f1d` | `Str ` | "Up Next" (Now Playing's row 0, and the list's title), "Remove from Queue", "Clear Queue" (the Up Next popup's rows 0, 1, relabelled) | `holdmenu.h` |
-| `iPod_Control/iTunes/FroggerHidden` | file | Songs hidden on the iPod: header (`"FRGH"`, version 2, entry size 12, the iTunesDB's stamp, count, reserved; 20 bytes), then per song its iTunesDB position, track id and flags (bit 0 shown: Show on a song the iTunesDB flags; else hidden). Version 1 (entry size 8, no flags, all hidden) is still read | `hide.h` |
+| `iPod_Control/iTunes/FroggerHidden`, `FroggerSkips`, `FroggerBookmarks`, `FroggerPlaylist_<id>`, `FroggerArt`, `FroggerDebug` | file | Frogger's files on the iPod: songs named by track key (dbid, track id, size, length), the old versions by position. Layouts, versions and matching: [file-formats.md][formats] | `hide.h`, `skips.h`, `resume.h`, `playlist.h`, `nowplaying.h`, `debug.c` |
 
 Apple's ids Frogger uses:
 
@@ -420,3 +424,4 @@ The other hex constants in `payload/`, `loader/` and `tools/mkpayload.py`: instr
 [disk]: power-and-emupod.md#part-c-the-disk-that-stops-answering-confirmed-in-emupod
 [flash]: power-and-emupod.md#part-d-flash-storage-working-in-emupod
 [clicker]: re-notes.md#the-clicker-confirmed-in-emupod
+[formats]: file-formats.md

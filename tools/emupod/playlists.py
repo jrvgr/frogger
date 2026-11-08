@@ -19,8 +19,9 @@
                          # songs load, so the track list must be in track-id order
     playlists.py order3  # tracks in id order, master playlist 103, 101, 102, 104: refs [1, 2, 0, 3]
                          # (order 0x26 is the master playlist's order)
-    playlists.py resync  # (after synced) write the iTunesDB again, as a sync would: the file
-                         # is now stale, so Mix must stay as synced (Tone A only)
+    playlists.py resync  # (after synced) write the iTunesDB again, as a sync would: Mix has a
+                         # persistent id, so its file is FroggerPlaylist_0000000000ABCDF0, by key,
+                         # and Mix keeps Tone B (dbid.py checks this with new ids and order)
 
 Screenshots pl_*.png; prints each playlist's song count after each step."""
 import shutil, struct, subprocess, sys
@@ -146,11 +147,11 @@ elif step in ("synced", "order", "order2", "order3"):
                           "::/iPod_Control/iTunes"], capture_output=True, text=True).stdout)
     out = Path(card).with_suffix(".fp")
     subprocess.run(["nix", "shell", "nixpkgs#mtools", "-c", "mcopy", "-n", "-i", f"{card}@@{start * 512}",
-                    "::/iPod_Control/iTunes/FroggerPlaylist_1", str(out)], check=True)
+                    "::/iPod_Control/iTunes/FroggerPlaylist_0000000000ABCDF0", str(out)], check=True)
     f = out.read_bytes(); out.unlink()
-    n = struct.unpack_from("<I", f, 0xc)[0]
-    print("FroggerPlaylist_1: stamp %#x, refs %s" % (struct.unpack_from("<I", f, 0x10)[0],
-                                                     list(struct.unpack_from("<%dI" % n, f, 0x14))))
+    n = struct.unpack_from("<I", f, 0xc)[0]                     # FRGP: songs by key (dbid, id, size, length)
+    print("FroggerPlaylist_0000000000ABCDF0: songs (dbid, id) %s" % [
+        struct.unpack_from("<QI", f, 24 + 20 * i) for i in range(n)])
 elif step == "lists":
     def playing():
         lib = rd(rd(0x43580c) + 0x1c); it = rd(rd(rd(lib) + 4) + 0x2a8)

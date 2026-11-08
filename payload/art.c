@@ -6,13 +6,12 @@
  * 1, 0, 0, data length) and then 2-bit pixels, top bit first, 3 = black, each
  * row padded to 4 bytes.
  *
- * Covers come from iPod_Control/iTunes/FroggerArt, which Crate writes with
- * the iTunesDB (nowplaying.h has the layout). It's indexed by a track's
- * position in the database, and the firmware's track records don't carry
- * one, so track_hook tells us where each record is as the database loads.
- * They're allocated in blocks of 100 (on a real library), one after another
- * within a block and the blocks anywhere, so we keep where each run of evenly
- * spaced records starts. If there are too many runs, covers stay off. */
+ * Covers come from iPod_Control/iTunes/FroggerArt, which Crate (or
+ * tools/coverart.py) writes (nowplaying.h has the layout). Version 2 names
+ * each song by key (tracks.h), so it still fits after another app's sync:
+ * the cover task reads its table once per database and keeps an image per
+ * track position. Version 1 is indexed by position directly and fits only
+ * the database it was made for. tracks.c knows each record's position. */
 
 #include <stdint.h>
 #include "settings.h"
@@ -20,6 +19,7 @@
 #include "holdmenu.h"
 #include "letters.h"
 #include "battery.h"
+#include "tracks.h"
 
 #define FOURCC_STR  0x53747220u
 #define FOURCC_BMAP 0x424d6170u
@@ -37,15 +37,6 @@ static struct {
     uint32_t length;
     uint8_t px[NP_ART_BYTES];
 } art;
-
-/* Where the track records are (np_track_loaded): runs of records `spacing`
- * apart, each from its first record and position to the next run's. */
-#define MAX_RUNS 240     /* blocks of 100 tracks: room for some 24000 */
-static struct {
-    uint32_t spacing, count, n_runs, last;
-    int broken;
-    struct { uint32_t record, pos; } run[MAX_RUNS];
-} records;
 
 /* The firmware's file calls (docs/re-notes.md, "Files"). A path is a volume
  * word and then a DOS-style name. */
@@ -76,7 +67,7 @@ static void art_header(void)
  * Playing next opens. */
 enum {
     WHY_NO_COVER,       /* the file has none for this song */
-    WHY_NO_POSITION,    /* the track isn't one we saw load (or too many runs) */
+    WHY_NO_POSITION,    /* the track isn't one we saw load */
     WHY_OPEN,           /* the file didn't open */
     WHY_HEADER_READ,
     WHY_HEADER,         /* not a FroggerArt this payload reads */
@@ -216,12 +207,47 @@ static int art_read(uint32_t offset, void *buf, uint32_t n)
 static uint8_t art_buf[NP_ART_BYTES];
 static uint32_t buf_image = ART_FRAME;     /* the image art_buf holds; the task's own */
 
+/* FroggerArt version 2's table, as images by track position (NP_ART_NONE: no
+ * cover), for the database (tracks_gen) and file (entries, images) it was
+ * built from; the cover task's own. */
+static uint16_t by_pos[MAX_TRACKS];
+static struct { uint32_t gen, entries, images; } art_index;
+#define CHUNK 64
+static struct np_art_entry chunk[CHUNK];
+
+static int art_table(const struct np_art_header *h)
+{
+    uint32_t i, j, n, at = sizeof *h;
+    int p;
+
+    if (art_index.gen == tracks_gen() && art_index.entries == h->positions && art_index.images == h->images)
+        return 1;
+    if (!tracks_ready())
+        return 0;
+    art_index.gen = 0;
+    for (i = 0; i < MAX_TRACKS; i++)
+        by_pos[i] = NP_ART_NONE;
+    for (i = 0; i < h->positions; i += n) {
+        n = h->positions - i < CHUNK ? h->positions - i : CHUNK;
+        if (!art_read(at, chunk, n * sizeof chunk[0]))
+            return 0;
+        at += n * sizeof chunk[0];
+        for (j = 0; j < n; j++)
+            if (chunk[j].image < h->images && (p = tracks_find(&chunk[j].key)) >= 0)
+                by_pos[p] = chunk[j].image;
+    }
+    art_index.gen = tracks_gen();
+    art_index.entries = h->positions;
+    art_index.images = h->images;
+    return 1;
+}
+
 static uint32_t art_load(uint32_t pos)
 {
     struct np_art_header h;
-    uint16_t image;
+    uint16_t image = NP_ART_NONE;
     unsigned i;
-    uint32_t got;
+    uint32_t got, images_at;
 
     art_path.volume = fw_volume();
     for (i = 0; i < sizeof art_name; i++)
@@ -230,67 +256,35 @@ static uint32_t art_load(uint32_t pos)
         art_file[i] = 0;        /* nothing left over from a read that went wrong */
     if (fw_open(&art_path, art_file, FW_READ, FW_DATA) != 0)
         return ART_FRAME + WHY_OPEN;
-    /* h.positions must be this database's track count: a file from before the last sync would
-     * give the wrong songs' covers (Crate deletes it when it writes the database, but still) */
     if (!art_read(0, &h, sizeof h))
         got = ART_FRAME + WHY_HEADER_READ;
-    else if (h.magic != NP_ART_MAGIC || h.version != NP_ART_VERSION || h.size != ART_SIZE
-             || h.image_bytes != NP_ART_BYTES)
+    else if (h.magic != NP_ART_MAGIC || (h.version != NP_ART_VERSION && h.version != NP_ART_VERSION_1)
+             || h.size != ART_SIZE || h.image_bytes != NP_ART_BYTES)
         got = ART_FRAME + WHY_HEADER;
-    else if (h.positions != records.count || pos >= h.positions)
+    /* version 1: h.positions must be this database's track count, or a file from before the
+     * last sync would give the wrong songs' covers */
+    else if (h.version == NP_ART_VERSION_1 && (h.positions != tracks_total() || pos >= h.positions))
         got = ART_FRAME + WHY_TRACK_COUNT;
-    else if (!art_read(sizeof h + 2 * pos, &image, 2))
+    else if (h.version == NP_ART_VERSION_1 && !art_read(sizeof h + 2 * pos, &image, 2))
         got = ART_FRAME + WHY_INDEX_READ;
-    else if (image == NP_ART_NONE || image >= h.images)
-        got = ART_FRAME + WHY_NO_COVER;
-    else if (image == buf_image
-             || art_read(np_art_images_offset(h.positions) + (uint32_t)image * NP_ART_BYTES, art_buf, NP_ART_BYTES))
-        got = buf_image = image;
-    else
-        got = buf_image = ART_FRAME + WHY_IMAGE_READ;      /* art_buf may be half new */
+    else if (h.version != NP_ART_VERSION_1 && !art_table(&h))
+        got = ART_FRAME + WHY_INDEX_READ;
+    else {
+        if (h.version == NP_ART_VERSION_1)
+            images_at = np_art_images_offset(h.positions);
+        else {
+            image = pos < MAX_TRACKS ? by_pos[pos] : NP_ART_NONE;
+            images_at = np_art2_images_offset(h.positions);
+        }
+        if (image == NP_ART_NONE || image >= h.images)
+            got = ART_FRAME + WHY_NO_COVER;
+        else if (image == buf_image || art_read(images_at + (uint32_t)image * NP_ART_BYTES, art_buf, NP_ART_BYTES))
+            got = buf_image = image;
+        else
+            got = buf_image = ART_FRAME + WHY_IMAGE_READ;      /* art_buf may be half new */
+    }
     fw_close(art_file);
     return got;
-}
-
-/* track_hook, for every track record as the database loads. */
-void np_track_loaded(uint32_t record, uint32_t pos)
-{
-    if (pos == 0) {
-        records.spacing = 0;
-        records.n_runs = 0;
-        records.broken = 0;
-    } else if (!records.spacing && record > records.last && record - records.last < 0x1000) {
-        records.spacing = record - records.last;        /* the record size: the first two in a row */
-    }
-    if (pos == 0 || !records.spacing || record != records.last + records.spacing) {
-        if (records.n_runs == MAX_RUNS) {
-            records.broken = 1;
-        } else {
-            records.run[records.n_runs].record = record;
-            records.run[records.n_runs].pos = pos;
-            records.n_runs++;
-        }
-    }
-    records.last = record;
-    records.count = pos + 1;
-}
-
-/* A record's position in the database; 0 if it isn't one we saw load. */
-static int position_of(uint32_t record, uint32_t *pos)
-{
-    uint32_t i;
-
-    for (i = 0; i < records.n_runs; i++) {
-        uint32_t start = records.run[i].record, off = record - start;
-        uint32_t n = (i + 1 < records.n_runs ? records.run[i + 1].pos : records.count) - records.run[i].pos;
-        if (record < start)
-            continue;
-        if (records.spacing ? off % records.spacing == 0 && off / records.spacing < n : off == 0) {
-            *pos = records.run[i].pos + (records.spacing ? off / records.spacing : 0);
-            return 1;
-        }
-    }
-    return 0;
 }
 
 /* The track whose cover art.px should show, set by np_playing. */
@@ -327,7 +321,7 @@ static uint32_t art_job(uint32_t record)
 {
     uint32_t pos;
 
-    if (records.broken || !position_of(record, &pos))
+    if (!tracks_position(record, &pos))
         return ART_FRAME + WHY_NO_POSITION;
     return art_load(pos);
 }

@@ -26,7 +26,7 @@
 
 #include <stdint.h>
 #include "skips.h"
-#include "hide.h"
+#include "tracks.h"
 
 #define PLAYER_ITEM      (0x2a8 / 4)
 #define PLAYER_POS       ((0x2000 + 0x164) / 4)     /* ms into the track */
@@ -39,34 +39,17 @@
 struct skip { uint32_t pos, id, count, last; };
 
 static struct skip skip[MAX_SKIPS];
-static uint32_t n_skip, gen, dirty;                 /* gen: hide_gen() + 1 once read back */
+static uint32_t n_skip, gen, dirty;                 /* gen: tracks_gen() once read back */
 
-#define make_path   ((uint32_t (*)(void *out, uint32_t kind, const char *dir, const char *name))0x53a24)
-#define find_path   ((uint32_t (*)(void *out, const char *name))0x7b3bc)
-#define fw_open     ((int (*)(void *path, void *file, uint32_t mode, uint32_t type))0x403fc)
-#define fw_create   ((int (*)(void *path, void *file, uint32_t zero, uint32_t type))0x40474)
-#define fw_read     ((int (*)(void *file, uint32_t *len, void *data))0x404ec)
-#define fw_write    ((int (*)(void *file, uint32_t *len, const void *data))0x407e8)
-#define fw_close    ((int (*)(void *))0x40110)
 #define db_stamp    ((uint32_t (*)(void))0x77600)
 #define clock_us    ((void (*)(uint32_t *us))0x87de0)
 #define mac_time    ((void (*)(uint32_t *out))0xa065c)  /* as 0xb79ac sets "last played" */
-#define ITUN        0x6974756eu
-#define FW_READ     0x20000
-#define FW_DATA     0x64617461u
 
-static uint32_t path[0x108 / 4], file[0x80 / 4];
 static const char name[] = "FroggerSkips";
 
 static uint32_t word(uint32_t addr, unsigned i)
 {
     return ((const volatile uint32_t *)addr)[i];
-}
-
-static void clear(uint32_t *p, unsigned n)
-{
-    while (n--)
-        *p++ = 0;
 }
 
 static struct skip *entry(uint32_t pos, uint32_t id)
@@ -87,13 +70,16 @@ static struct skip *entry(uint32_t pos, uint32_t id)
 /* The song `track` is being left for another at `ms`: a skip if that's 2-20 s. */
 static void left(uint32_t track, uint32_t ms)
 {
-    uint32_t id;
-    int pos;
+    uint32_t pos;
+    struct track_key k;
     struct skip *s;
 
-    if (gen != hide_gen() + 1 || !track || ms < SKIP_MIN_MS || ms >= SKIP_MAX_MS)
+    if (gen != tracks_gen() || !track || ms < SKIP_MIN_MS || ms >= SKIP_MAX_MS)
         return;
-    if ((pos = hide_position(track, &id)) < 0 || !(s = entry(pos, id)))
+    if (!tracks_position(track, &pos) || pos >= tracks_count())
+        return;
+    tracks_key(pos, &k);
+    if (!(s = entry(pos, k.id)))
         return;
     s->count++;
     mac_time(&s->last);
@@ -157,58 +143,75 @@ void skips_pick(uint32_t player, uint32_t item, uint32_t from)
  * case a tick hasn't come since. */
 void skips_save(void)
 {
-    struct skip_file_header h = { SKIP_FILE_MAGIC, SKIP_FILE_VERSION, sizeof(struct skip), 0, 0, 0 };
-    uint32_t len;
+    struct skip_file_header h = { SKIP_FILE_MAGIC, SKIP_FILE_VERSION, sizeof(struct skip_entry), 0, 0, 0 };
+    struct skip_entry e;
+    uint32_t i;
 
-    if (!dirty || gen != hide_gen() + 1)
+    if (!dirty || gen != tracks_gen())
         return;
     h.stamp = db_stamp();
     h.count = n_skip;
-    clear(path, sizeof path / 4);
-    clear(file, sizeof file / 4);
-    if (make_path(path, ITUN, "iPod_Control\\iTunes\\", name) != 0 || fw_create(path, file, 0, FW_DATA) != 0)
+    if (!file_create(name))
         return;
-    len = sizeof h;
-    fw_write(file, &len, &h);
-    len = n_skip * sizeof(struct skip);
-    fw_write(file, &len, skip);
-    fw_close(file);
+    file_write(&h, sizeof h);
+    for (i = 0; i < n_skip; i++) {
+        tracks_key(skip[i].pos, &e.key);
+        e.count = skip[i].count;
+        e.last = skip[i].last;
+        file_write(&e, sizeof e);
+    }
+    file_close();
     dirty = 0;
 }
 
-/* tick_hook, on the UI thread: once a database has loaded, the file back
- * (entries whose track is still there by position and id). It's not saved
- * here after a skip: a skip is a song change, so the player is reading the
- * next song into RAM just then, and a file written over that left a device
- * unable to play anything until a restart. counts_hook saves it with Play
- * Counts, which keeps the skips as long as Apple keeps the plays. */
+static void restore(uint32_t pos, uint32_t count, uint32_t last)
+{
+    struct track_key k;
+    struct skip *s;
+
+    tracks_key(pos, &k);
+    if ((s = entry(pos, k.id)) != 0) {
+        s->count += count;
+        s->last = last > s->last ? last : s->last;
+    }
+}
+
+/* tick_hook, on the UI thread (after tracks_tick): once a database has
+ * loaded, the file back: version 2 by key (entries whose song is gone are
+ * dropped), version 1 by position and id, only for the iTunesDB it was
+ * written for. It's not saved here after a skip: a skip is a song change, so
+ * the player is reading the next song into RAM just then, and a file written
+ * over that left a device unable to play anything until a restart.
+ * counts_hook saves it with Play Counts, which keeps the skips as long as
+ * Apple keeps the plays. */
 void skips_tick(void)
 {
     struct skip_file_header h;
-    struct skip e, *s;
-    uint32_t len, i;
+    struct skip_entry e;
+    uint32_t i, old[4];
+    int p;
 
-    if (gen == hide_gen() + 1)
+    if (gen == tracks_gen() || !tracks_ready())
         return;
-    if (!hide_tracks())
-        return;
-    gen = hide_gen() + 1;
+    gen = tracks_gen();
     n_skip = dirty = 0;
-    clear(path, sizeof path / 4);
-    clear(file, sizeof file / 4);
-    if (find_path(path, name) != 0 || fw_open(path, file, FW_READ, FW_DATA) != 0)
+    if (!file_open(name))
         return;
-    len = sizeof h;
-    if (fw_read(file, &len, &h) == 0 && len == sizeof h && h.magic == SKIP_FILE_MAGIC
-        && h.version == SKIP_FILE_VERSION && h.entry_size == sizeof e && h.stamp == db_stamp())
-        for (i = 0; i < h.count; i++) {
-            len = sizeof e;
-            if (fw_read(file, &len, &e) != 0 || len != sizeof e)
-                break;
-            if (hide_record(e.pos, e.id) && (s = entry(e.pos, e.id)) != 0) {
-                s->count = e.count;
-                s->last = e.last;
+    if (file_read(&h, sizeof h) && h.magic == SKIP_FILE_MAGIC) {
+        if (h.version == SKIP_FILE_VERSION && h.entry_size == sizeof e) {
+            for (i = 0; i < h.count && file_read(&e, sizeof e); i++)
+                if ((p = tracks_find(&e.key)) >= 0)
+                    restore((uint32_t)p, e.count, e.last);
+            dirty = h.stamp != db_stamp();      /* a new database: write it for this one */
+        } else if (h.version == 1 && h.entry_size == sizeof old && h.stamp == db_stamp()) {
+            for (i = 0; i < h.count && file_read(old, sizeof old); i++) {
+                struct track_key k;
+                tracks_key(old[0], &k);
+                if (old[0] < tracks_count() && k.id == old[1])
+                    restore(old[0], old[2], old[3]);
             }
+            dirty = 1;                          /* written again as version 2 */
         }
-    fw_close(file);
+    }
+    file_close();
 }

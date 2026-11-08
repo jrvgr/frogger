@@ -91,7 +91,7 @@ real iPod.
 | `payload/` | The features, resident next to Apple's OS |
 | `tests/` | Unit tests (Python): the installer, the hooks, Frogger's files |
 | `tools/install.py` | Puts the loader in the firmware partition and takes it out |
-| `tools/podinfo.py`, `tools/coverart.py` | Frogger's data on a mounted iPod; the covers |
+| `tools/podinfo.py`, `tools/coverart.py` | Frogger's data on a mounted iPod; the covers ([formats](docs/file-formats.md)) |
 | `tools/fwtool.py` | Lists and extracts the images in an `.ipsw` |
 | `tools/emu/` | Unicorn harness: runs single firmware functions |
 | `tools/emupod/` | Emulator tests; `probes/` has the one-off reverse-engineering traces |
@@ -99,6 +99,8 @@ real iPod.
 | `docs/` | Notes on firmware 2.3 |
 
 `docs/addresses.md` maps every firmware address Frogger uses: start there for a new feature.
+`docs/file-formats.md` has every file Frogger reads or writes on the iPod; a change to one gets a new
+version there, a sample in `tests/fixtures/` (`mkfixtures.py`), and the old version still read.
 
 ## Issues
 

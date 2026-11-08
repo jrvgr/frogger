@@ -315,6 +315,20 @@ drive; 2.7 s later, drive still hung, Menu and the wheel move Songs' highlight, 
 recovery song 2's cover is up. With the read forced back onto the UI (FroggerArt marked
 unavailable) the same run fails: the wheel does nothing during the hang.
 
+**The next-song preload.** About a second after a song starts, the playback tick `0x94918`,
+which runs on the UI thread, preloads the next song: `0x949bc` asks the queue for it, then
+`0x94a58` loads it through `0xbca48` → `0x66c74` → `fw_volume` (`0xb1d50`), which takes the
+volume's lock (`0xb1df0`: `0x11fdb4` on `vol+0x18`). Readers other than TrackCacheReadTask hold
+that lock while their read runs, among them an FS worker task (the message loop `0x14a810`,
+`0x120980` → `0x1334a4`, a stack near `0x4511a00` in emupod) and the cover task; if the drive
+stops answering one of their reads, the UI waits on the lock for the whole timeout and recovery.
+Stock 2.3 does the same (`stall.py --stock`, song 36, `ata_hang(29..36, 3000)`: Menu does nothing).
+`preload_hook` (`disk.c`, the `bl 0x9f288` at `0x94984`) makes the tick skip the preload, as when
+`0x9f288` says not now, while `disk_stalled(250 ms)`: a read has run that long with none ending,
+or a re-init is pending. `[player+0xb4c]` stays set and a later tick preloads once the disk
+answers. Found by `stall.py` (trial 101, seed 1, on CI's card): FroggerArt version 2's table
+read at the song's start moved the hang onto the worker's read just before the preload.
+
 ## Part D: Flash Storage (working in emupod)
 
 Settings › Flash Storage (`payload/flash.c`; Off, Auto, On; **Off by default**) lets a flash mod's

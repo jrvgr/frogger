@@ -7,7 +7,7 @@ One run per step, each its own process, on a copy of the card.
     skips.py first    # Short Tone, Next at 0 s: none; Tone A at 27 s, Next: none; Tone B, Prev at
                       # 5 s: none; Tone B at 10 s, pick Tone A: a skip; Tone A at 6 s, Next: a
                       # skip
-    skips.py save     # Tone A at 6 s, Next: a skip; FroggerSkips is written only with Apple's
+    skips.py save     # Tone A at 6 s, Next: a skip; FroggerSkips (version 2, by key) is written only with Apple's
                       # Play Counts (counts_hook: the 'prwp' event a second or two after the song
                       # change, or sleep), never
                       # on a UI tick while the player loads the next song
@@ -61,14 +61,14 @@ def make_card():
 
 
 def skips_file(card):
-    """FroggerSkips on `card`: (header fields, [(pos, id, count, last)])."""
+    """FroggerSkips on `card`: (header fields, [(dbid, id, size, length, count, last)])."""
     start = struct.unpack_from("<I", open(card, "rb").read(512), 0x1be + 16 + 8)[0]
     data = subprocess.run(["nix", "shell", "nixpkgs#mtools", "-c", "mcopy", "-i", f"{card}@@{start * 512}",
                            "::/iPod_Control/iTunes/FroggerSkips", "-"], capture_output=True).stdout
     if len(data) < 20:
         return None, []
     h = struct.unpack_from("<IHHIII", data, 0)
-    return h, [struct.unpack_from("<4I", data, 20 + i * h[2]) for i in range(h[4]) if 20 + (i + 1) * h[2] <= len(data)]
+    return h, [struct.unpack_from("<QIIIII", data, 20 + i * h[2]) for i in range(h[4]) if 20 + (i + 1) * h[2] <= len(data)]
 
 
 def boot(first, card=RUN):
@@ -159,8 +159,9 @@ def save():
           froms and all(hook <= lr < hook + 0x20 for lr in froms))
     h, e = skips_file(RUN)
     print("  FroggerSkips:", h and [hex(x) for x in h], e)
-    check("FroggerSkips: header FRGS v1, 16-byte entries", h is not None and h[:3] == (0x53475246, 1, 16))
-    check("  Tone A (1, id 101), 1 skip, a time", [x[:3] for x in e] == [(1, 101, 1)] and all(x[3] > 0xb0000000 for x in e))
+    check("FroggerSkips: header FRGS v2, 28-byte entries", h is not None and h[:3] == (0x53475246, 2, 28))
+    check("  Tone A (dbid 0x1000 + 101, id 101, its size and length), 1 skip, a time",
+          [x[:5] for x in e] == [(0x1000 + 101, 101, 2881119, 180000, 1)] and all(x[5] > 0xb0000000 for x in e))
     p.shot("skips_save.png")
 
 
