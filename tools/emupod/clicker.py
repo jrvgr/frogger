@@ -13,7 +13,13 @@ the first wrong step; screenshots ck_*.png):
    what the sound FIQ sends then is the click. Its peak per Click Volume: about 4125, 8231, 16423
    (-18, -12, -6 dBFS).
    Both: the piezo and the music.
-3. Paused, Headphones: the piezo clicks instead (the sound FIQ is off).
+0. Before any song since boot, Headphones: the codec isn't up (Apple's copy of its registers,
+   0x44be49c, has R9 inactive), so Apple's playback setup (0x13fc38) brings it up, and the click
+   plays on its own through I2S, no piezo.
+3. Paused, Headphones: the click on its own through I2S (click_paused), no piezo; then I2S is in
+   Apple's paused state again (0xc0002500 = 0, the sound FIQ masked). Also checked: the codec
+   copy says active, DAC and output on. (emupod's FIFO always has room and doesn't play without
+   the FIQ, so the click's sound isn't checked here.)
 4. Nothing in Apple's image changed (read-only on a device)."""
 import struct, sys
 from pathlib import Path
@@ -88,6 +94,25 @@ for v, tag in ((1, "Medium"), (2, "Loud"), (0, "Quiet")):
     check("   Click Volume: %s" % tag, flags() >> 14 & 3 == v, hex(flags()))
 p.press("menu"); p.settle(); go(-20)                                   # the main menu
 
+# 0. Nothing played yet
+WM = 0x44be49c
+wm = lambda r: struct.unpack("<H", bytes(p.m.mem_read(WM + 2 * r, 2)))[0] & 0x1ff
+set_flags(flags() & ~(3 << 30) | 1 | 1 << 30)
+fb, pa = rd(SYM["clicker_fallback"]), rd(SYM["clicker_paused"])
+p.m.hook_start([PUMP], None, 0)
+for _ in range(12):
+    p.wheel(-1, gap_us=0, after_us=12_000)                             # down: the main menu is at its top
+    if rd(SYM["clicker_fallback"]) != fb or rd(SYM["clicker_paused"]) != pa:
+        break
+p.run(150_000)
+pumped = len(p.m.hook_log()); p.m.hook_start([], None, 0)
+dfb, dpa = rd(SYM["clicker_fallback"]) - fb, rd(SYM["clicker_paused"]) - pa
+go(-20)
+check("0. Before a song, Headphones: the codec up (R9 %d, R6 %#x), the click, no piezo" % (wm(9), wm(6)),
+      not pumped and dfb == 0 and dpa == 1 and rd(SYM["clicker_opened"]) == 1 and wm(9) & 1 and not wm(6) & 0x98,
+      "pumped %d fallback +%d paused +%d opened %d" % (pumped, dfb, dpa, rd(SYM["clicker_opened"])))
+set_flags(flags() & ~(3 << 30))
+
 # 2. A song plays
 go(0); p.press("select"); p.settle()                                   # Music
 go(3); p.press("select"); p.settle()                                   # Songs
@@ -120,12 +145,12 @@ def click_once(place, volume=0):
             f = p.m.fiqs(); p.run(2_000)
             if p.m.fiqs() - f >= 4:
                 break
-    piezo, mixed = p.m.click_count(), rd(SYM["clicker_mixed"])
+    piezo, mixed, alone = p.m.click_count(), rd(SYM["clicker_mixed"]), rd(SYM["clicker_paused"])
     p.m.hook_start([PUMP], None, 0)     # the piezo's sound: the pump, 0xaa bytes into the UART
     p.m.audio_take()
     for _ in range(12):                 # 2.3 moves the highlight once per 4-6 steps
         p.wheel(click_once.d, gap_us=0, after_us=12_000)
-        if p.m.click_count() != piezo or rd(SYM["clicker_mixed"]) != mixed:
+        if p.m.click_count() != piezo or rd(SYM["clicker_mixed"]) != mixed or rd(SYM["clicker_paused"]) != alone:
             break
     click_once.d = -click_once.d
     p.run(150_000)                      # the 10 ms click, played out (emupod's FIQ runs slow)
@@ -148,10 +173,13 @@ check("   Both: the piezo and the music", pz == 1 and mx == 1 and abs(peak - PEA
 
 # 3. Paused
 p.press("play", after_us=600_000); p.settle()
-fb = rd(SYM["clicker_fallback"])
+fb, pa = rd(SYM["clicker_fallback"]), rd(SYM["clicker_paused"])
+check("3. Paused: the codec still up (R9 %d, R6 %#x)" % (wm(9), wm(6)), wm(9) & 1 and not wm(6) & 0x98)
 pz, mx, peak = click(1)
-check("3. Paused, Headphones: the piezo instead", pz == 1 and mx == 0 and rd(SYM["clicker_fallback"]) == fb + 1,
-      "piezo %d mixed %d peak %d" % (pz, mx, peak))
+i2s, fiq = rd(0xc0002500), rd(0xcf001030) >> 5 & 1
+check("   Headphones: on its own, no piezo", pz == 0 and mx == 0 and rd(SYM["clicker_paused"]) == pa + 1
+      and rd(SYM["clicker_fallback"]) == fb, "piezo %d mixed %d paused %d" % (pz, mx, rd(SYM["clicker_paused"]) - pa))
+check("   then Apple's paused state (I2S %#x, FIQ %d)" % (i2s, fiq), i2s == 0 and fiq == 0)
 
 now = bytes(p.m.mem_read(0, END))
 diff = [i for i in range(END) if snap[i] != now[i]]

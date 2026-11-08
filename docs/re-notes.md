@@ -976,8 +976,22 @@ boundaries come from `push {..., lr}` prologues, so they are approximate.
   back to the task's wait (`0x13c658`), so neither the setup nor the pump runs. Headphones and Both add a 10 ms click (4 ms of a
   1 kHz square through a one-pole low-pass, peak -18/-12/-6 dBFS by Click Volume) to the decoded
   music 64 frames past the read pointer, before the codec, so it follows the headphone volume.
-  It first waits up to 3 ms for the read pointer to move; if it doesn't (paused, stopped), or the
-  pointers are out of the ring, or under 284 frames are decoded, the click goes to the piezo.
+  It first waits up to 3 ms for the read pointer to move; if the pointers are out of the ring, or
+  under 284 frames are decoded, the click goes to the piezo.
+- **Paused or stopped.** Apple only turns I2S off (`0x12588c`: `0xc0002500` = 0, FIQ masked at
+  `0xcf001038`, FIFO reset `0x125764` = `0xc000251c` bit 16 pulsed, `0xc0002400` = 0); the codec
+  (WM8731, I2C 0x34, every write through `0x140614`) keeps R6 = `0x067` (DAC and output on) and R9
+  = 1 (active, set on the first play, never cleared), and is the I2S master (R7 = `0x4a`). Play
+  (`0x1258b8`) waits for the word clock (`0xcf00003c` bit 6: high, low, high), sets I2S off, resets
+  the FIFO, writes 16 zero words, unmasks the FIQ (`0xcf001034`) and sets `0xc0002500` = `0xd`; no
+  codec writes, no anti-pop wait (resume 18 ms). `click_paused` does the same and feeds the FIFO
+  itself (a word per channel, the sample in bits 16-31, as the FIQ), then puts I2S back off. Only
+  when `0x140614`'s copy of the registers (`0x44be49c`, a halfword `reg << 9 | value` each) says R9
+  active and R6 bits 3, 4, 7 clear; otherwise (no song since boot, or powered down) it first calls
+  Apple's playback setup of the codec, `0x13fc38(mode)` (`0x697d0` maps the rate: 32 kHz 6, 44.1
+  kHz 8, 88.2 kHz 12, 96 kHz 7; mode 8 here), which writes R9/R8/R7 and ends with R6 = `0x67`, as
+  a song's start does. Not seen: Sleep, a long idle (the copy should follow Apple's own power-down),
+  pops (emupod has no analog).
 - **Settings.** Apple's Clicker row cycles Off, Speaker, Headphones, Both (its function, fn 401,
   sends the value it wants, On or Off; quick settings' row sends the toggle `0x282f`): Off and On
   go through Apple's setter (bit 0, `obj+0x33`), the place is prefs bits 30-31, Click Volume 14-15.
