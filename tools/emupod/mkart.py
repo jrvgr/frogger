@@ -11,6 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SIZE = 72
 ROW = (SIZE // 4 + 3) & ~3
 BYTES = ROW * SIZE
+# The test covers, as level(x, y) -> 0..3 (3 = black): track 1 a diagonal gradient, track 2 a
+# checkerboard (artplay.py checks the screen against these).
+COVERS = [lambda x, y: (x + y) * 4 // (2 * SIZE),
+          lambda x, y: 3 * (((x // 7) + (y // 7)) & 1)]
 
 
 def image(level):
@@ -35,8 +39,7 @@ if __name__ == "__main__":
     p.add_argument("--out", default=str(ROOT / "build/emupod-work/art-card.img"))
     p.add_argument("--tracks", type=int, default=2)
     args = p.parse_args()
-    covers = [image(lambda x, y: (x + y) * 4 // (2 * SIZE)),                       # diagonal gradient
-              image(lambda x, y: 3 * (((x // 7) + (y // 7)) & 1))]                # checkerboard
+    covers = [image(level) for level in COVERS]
     data = froggerart([i % len(covers) for i in range(args.tracks)], covers)
     shutil.copyfile(args.card, args.out)
     mbr = Path(args.out).read_bytes()[:512]

@@ -216,7 +216,7 @@ Apple's page, and the cover page is made at runtime by changing the live objects
 
 - **Testing**: `tools/emupod/mkart.py` puts a FroggerArt with test pictures (a gradient and a
   checkerboard) on a copy of the test card (`art-card.img`); `artplay.py` plays both songs and
-  screenshots Now Playing.
+  checks the cover page shows each one's picture, pixel for pixel.
 
 ## How the screen is put together (runtime)
 
