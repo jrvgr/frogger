@@ -10,8 +10,8 @@ stock firmware.
 > change goes through emulator tests that drive Apple's firmware with Frogger loaded
 > (`tools/emupod/`). Keep a backup anyway: see [Getting back to stock](#getting-back-to-stock).
 
-Work in progress. Some features need a syncing app that knows about them: that's
-[Crate](#without-crate), a Mac app that isn't released yet.
+Some features need a syncing app that knows about them: that's [Crate](https://github.com/jrvgr/crate),
+a Mac app that also installs Frogger for you. Without it, see [Without Crate](#without-crate).
 
 ## Features
 
@@ -113,8 +113,8 @@ To build the loader yourself, see [CONTRIBUTING.md](CONTRIBUTING.md#building).
 ## Without Crate
 
 Crate writes the covers, sets the hide flag and reads back what the iPod recorded (hides,
-skips, songs added to playlists, mix positions) when it syncs. Until it's out,
-`tools/podinfo.py` shows that data and sets the flag (plain Python 3, iPod mounted; on Linux
+skips, songs added to playlists, mix positions) when it syncs. Without it (or on Linux and
+Windows), `tools/podinfo.py` shows that data and sets the flag (plain Python 3, iPod mounted; on Linux
 it's where it's mounted, say `/media/$USER/IPOD`, on Windows its drive letter, `py tools\podinfo.py E:\`):
 
     tools/podinfo.py /Volumes/IPOD                # summary
