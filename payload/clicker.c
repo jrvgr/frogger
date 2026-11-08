@@ -41,6 +41,7 @@
 
 #include <stdint.h>
 #include "settings.h"
+#include "debug.h"
 
 #define RING_START      0x04449f80u
 #define RING_END        0x04461980u
@@ -198,6 +199,7 @@ static int click_paused(unsigned level)
 
     if (!(WM_REGS[WM_ACTIVE] & 1) || (WM_REGS[WM_POWER] & 0x98) || (COP_INT_EN & 0x20) || I2S_CTL)
         return 0;
+    debug_note(DEBUG_TAG('c', 'k', 'p', '0'), WM_REGS[WM_ACTIVE] | (uint32_t)WM_REGS[WM_POWER] << 16, I2S_FIFO_CFG);
     if (!click[CLICK_HALF])
         click_make();
     if (!word_clock_is(1) || !word_clock_is(0) || !word_clock_is(1))
@@ -215,10 +217,12 @@ static int click_paused(unsigned level)
         ok = feed(0);                   /* ends on silence */
     for (t0 = USEC_TIMER; ok && I2S_FREE() < 14 && USEC_TIMER - t0 < FEED_US; )
         ;                               /* played out */
+    debug_note(DEBUG_TAG('c', 'k', 'p', '1'), (uint32_t)ok | I2S_FREE() << 8, COP_INT_EN);
     if (COP_INT_EN & 0x20)
         return 1;                       /* a song started meanwhile: I2S is Apple's */
     I2S_CTL = 0;
     fifo_reset();                       /* Apple's paused state again */
+    debug_note(DEBUG_TAG('c', 'k', 'p', '2'), I2S_CTL, COP_INT_EN);
     return 1;
 }
 
@@ -231,6 +235,7 @@ int click_tone(uint32_t divisor, uint32_t length)
     (void)divisor;
     if (place == CLICK_SPEAKER || length > CLICK_MAX_LEN)
         return 0;
+    debug_note(DEBUG_TAG('c', 'k', 't', '0' + place), length, COP_INT_EN);
     if (click_mix(clicker_volume()))
         clicker_mixed++;
     else if (click_paused(clicker_volume()))
