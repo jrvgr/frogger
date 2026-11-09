@@ -18,6 +18,7 @@ body:
         - Install
         - Tools
         - Emulator
+        - Other
     validations:
       required: true
   - type: textarea
