@@ -31,7 +31,10 @@
  * paused state. When Apple's copy of the codec's registers (0x140614 keeps
  * them at 0x44be49c) says it isn't active with DAC and output powered
  * (before the first song since boot, or after Apple powered it down), Apple's
- * own playback setup (0x13fc38, mode 8: 44.1 kHz) brings it up first. The
+ * own playback setup (0x13fc38, mode 8: 44.1 kHz) brings it up first; it
+ * sets the headphones to full volume (127, R2 0x7b), which a song's start
+ * puts back, so the click puts back the volume Apple had (0x1403d0, its copy
+ * at 0x4449e00): at full volume each click was a loud pop (issue 22). The
  * piezo is left for when that fails, or for a song playing with its pointers
  * out of the ring or too little decoded.
  *
@@ -58,6 +61,9 @@
 #define WM_POWER        6                                   /* bits 3 DAC, 4 output, 7 all: powered down */
 #define WM_ACTIVE       9                                   /* bit 0 */
 #define codec_open      ((void (*)(uint32_t mode))0x13fc38)  /* Apple's playback setup of the codec, mode 8: 44.1 kHz (0x697d0) */
+#define codec_volume    ((void (*)(uint32_t out, uint32_t left, uint32_t right))0x1403d0)  /* out 2: the headphones, 0-127 */
+#define HP_VOLUME       ((volatile uint16_t *)0x04449e00)  /* 0x1403d0's copy: R2's value (x3), then left and right */
+#define CODEC_PHONES    2
 #define CODEC_44K       8
 #define I2S_FREE()      ((I2S_FIFO_CFG >> 23) & 14)
 #define FEED_US         2000            /* the FIFO not taking a word this long: no clock, give up */
@@ -210,8 +216,12 @@ static int click_paused(unsigned level)
     if ((COP_INT_EN & 0x20) || I2S_CTL)
         return 0;
     if (!codec_up()) {
+        uint32_t left = HP_VOLUME[3], right = HP_VOLUME[4];
+
         t0 = USEC_TIMER;
         codec_open(CODEC_44K);
+        if (left <= 127 && right <= 127)
+            codec_volume(CODEC_PHONES, left, right);    /* codec_open leaves them at 127: the user's volume again */
         debug_note(DEBUG_TAG('c', 'k', 'o', 'p'), USEC_TIMER - t0, WM_REGS[WM_ACTIVE] | (uint32_t)WM_REGS[WM_POWER] << 16);
         clicker_opened++;
         if (!codec_up() || (COP_INT_EN & 0x20) || I2S_CTL)

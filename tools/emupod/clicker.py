@@ -15,7 +15,8 @@ the first wrong step; screenshots ck_*.png):
    Both: the piezo and the music.
 0. Before any song since boot, Headphones: the codec isn't up (Apple's copy of its registers,
    0x44be49c, has R9 inactive), so Apple's playback setup (0x13fc38) brings it up, and the click
-   plays on its own through I2S, no piezo.
+   plays on its own through I2S, no piezo, at the user's headphone volume (R2 as before: the setup
+   leaves it at full volume, issue 22).
 3. Paused, Headphones: the click on its own through I2S (click_paused), no piezo; then I2S is in
    Apple's paused state again (0xc0002500 = 0, the sound FIQ masked). Also checked: the codec
    copy says active, DAC and output on. (emupod's FIFO always has room and doesn't play without
@@ -99,6 +100,7 @@ WM = 0x44be49c
 wm = lambda r: struct.unpack("<H", bytes(p.m.mem_read(WM + 2 * r, 2)))[0] & 0x1ff
 set_flags(flags() & ~(3 << 30) | 1 | 1 << 30)
 fb, pa = rd(SYM["clicker_fallback"]), rd(SYM["clicker_paused"])
+r2 = wm(2)
 p.m.hook_start([PUMP], None, 0)
 for _ in range(12):
     p.wheel(-1, gap_us=0, after_us=12_000)                             # down: the main menu is at its top
@@ -111,6 +113,7 @@ go(-20)
 check("0. Before a song, Headphones: the codec up (R9 %d, R6 %#x), the click, no piezo" % (wm(9), wm(6)),
       not pumped and dfb == 0 and dpa == 1 and rd(SYM["clicker_opened"]) == 1 and wm(9) & 1 and not wm(6) & 0x98,
       "pumped %d fallback +%d paused +%d opened %d" % (pumped, dfb, dpa, rd(SYM["clicker_opened"])))
+check("   the headphone volume still the user's (R2 %#x, was %#x)" % (wm(2), r2), wm(2) == r2 and r2 & 0x7f < 0x7b)
 set_flags(flags() & ~(3 << 30))
 
 # 2. A song plays

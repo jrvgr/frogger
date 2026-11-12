@@ -990,7 +990,10 @@ boundaries come from `push {..., lr}` prologues, so they are approximate.
   active and R6 bits 3, 4, 7 clear; otherwise (no song since boot, or powered down) it first calls
   Apple's playback setup of the codec, `0x13fc38(mode)` (`0x697d0` maps the rate: 32 kHz 6, 44.1
   kHz 8, 88.2 kHz 12, 96 kHz 7; mode 8 here), which writes R9/R8/R7 and ends with R6 = `0x67`, as
-  a song's start does. Not seen: Sleep, a long idle (the copy should follow Apple's own power-down),
+  a song's start does. That setup also sets the headphones to full volume (`0x1403d0(2, 127, 127)`,
+  R2 = `0x7b`, against `0x5c` at boot) and leaves it there until a song's start sets the user's; so
+  the click puts back the left and right Apple had (its copy at `0x4449e00`, halfwords 3 and 4) with
+  `0x1403d0(2, left, right)` (issue 22: before the first song every click was a pop). Not seen: Sleep, a long idle (the copy should follow Apple's own power-down),
   pops (emupod has no analog).
 - **Settings.** Apple's Clicker row cycles Off, Speaker, Headphones, Both (its function, fn 401,
   sends the value it wants, On or Off; quick settings' row sends the toggle `0x282f`): Off and On
