@@ -2,7 +2,7 @@
 write their own database use these; mhit(..., hidden=True) sets Frogger's hide flag, dbid= the
 persistent id (default 0x1000 + track id), mhyp(..., pid=) a playlist's."""
 import struct
-MHOD_TYPES = {"title": 1, "location": 2, "album": 3, "artist": 4, "genre": 5}
+MHOD_TYPES = {"title": 1, "location": 2, "album": 3, "artist": 4, "genre": 5, "composer": 12}
 
 def mhod(kind, text):  # as tools/emu/itunesdb.py builds it
     s = text.encode("utf-16-le")

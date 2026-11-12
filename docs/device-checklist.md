@@ -35,6 +35,9 @@ firmware, the storage and the library size in the release's pull request or issu
       keeps answering while the disk spins up, and no freeze on the next Menu
 - [ ] The same right after a song change, while the disk is refilling the music cache
 - [ ] Settings › Show Hidden, then Hide again: still hidden after a restart
+- [ ] Artists, Albums, Genres, Composers: "Hidden (N)" on top with the right N; its list, Select
+      into an item, Show there, Menu back to the whole list; the first list opened after a Hide
+      is about as quick as stock
 - [ ] A playlist made with Add to Playlist is still there after a restart, and after a sync
 - [ ] Play an album through: every song loads, no gap longer than stock's
 

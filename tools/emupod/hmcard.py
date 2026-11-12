@@ -30,19 +30,24 @@ def mtools(card, cmd, *args, **kw):
                            *args], check=True, **kw)
 
 
-def make(name, hidden=()):
+def make(name, hidden=(), songs=SONGS):
+    """songs: (title, artist, album, track number[, genre, composer]) each; genre "Test" and no composer
+    when left out."""
     card = W + "/" + name
     shutil.copy(W + "/music-card.img", card)
     tones = [("TONEA", 2881119, 180000, 128), ("TONEB", 28802739, 720000, 320)]
     mhits = []
-    for i, (title, artist, album, n) in enumerate(SONGS):
+    tid = {s[0]: 100 + i for i, s in enumerate(songs)}
+    for i, (title, artist, album, n, *more) in enumerate(songs):
         tone = tones[i % 2]
-        h = bytearray(mkdb.mhit(TID[title], {"title": title, "artist": artist, "album": album, "genre": "Test",
-                                             "location": ":iPod_Control:Music:F00:%s.mp3" % tone[0]},
-                                *tone[1:], hidden=title in hidden))
+        fields = {"title": title, "artist": artist, "album": album, "genre": more[0] if more else "Test"}
+        if len(more) > 1:
+            fields["composer"] = more[1]
+        fields["location"] = ":iPod_Control:Music:F00:%s.mp3" % tone[0]
+        h = bytearray(mkdb.mhit(tid[title], fields, *tone[1:], hidden=title in hidden))
         struct.pack_into("<II", h, 0x2c, n, 3)             # track number, of
         mhits.append(bytes(h))
-    ids = [TID[s[0]] for s in SONGS]
+    ids = [tid[s[0]] for s in songs]
     db = mkdb.mhbd([mkdb.mhsd(1, mkdb.mhl(b"mhlt", mhits)), mkdb.mhsd(2, mkdb.mhl(b"mhlp", [mkdb.mhyp("iPod", ids)]))])
     tmp = Path(card).with_suffix(".iTunesDB")
     tmp.write_bytes(db)

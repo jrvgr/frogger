@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include "browse.h"
 #include "hide.h"
+#include "hiddenrow.h"
 
 #define UI_OBJECT       (*(volatile uint32_t *)0x43580c)
 #define LIB_BROWSED     (0x40 / 4)
@@ -57,6 +58,7 @@ static const uint32_t build_array[5] = { 0x7c3a0, 0x7c1a8, 0x7c368, 0x7c178, 0x7
  * .f7, .f9 (ui); each does nothing while its count is the cached one. */
 static const uint32_t build_list[5] = { 0xf0fe8, 0xefdec, 0xf0670, 0xefd9c, 0xf2518 };
 static const uint8_t cache_of[5] = { 4, 3, 2, 1, 0 };   /* UI_CACHE + n */
+#define mem_free        ((void (*)(uint32_t p))0xa9f70)
 #define list_item       ((uint32_t (*)(uint32_t list, uint32_t kind, uint32_t rev, uint32_t i))0x78d60)
 /* The order stock's add takes a list's items in (0xc0b30, 0x4fb50); 0x506ec appends only
  * those (order 1 gave items that left garbage in the queue's item array). */
@@ -122,8 +124,9 @@ void browse_save(int kind, uint32_t row)
     /* The held list's widget, if the wheel moved it last: its rows are its
      * level's array (Albums and Artists have "All" too). (Its cursor can't
      * tell: with the popup up it isn't on the row.) */
-    i = kind == LIST_SONGS ? word(lib, 0x89c / 4) : kind == LIST_ALBUMS ? word(lib, 0x894 / 4) + 1
-      : kind == LIST_ARTISTS ? word(lib, 0x884 / 4) + 1 : 0;
+    i = kind == LIST_SONGS ? word(lib, 0x89c / 4)
+      : kind == LIST_ALBUMS ? word(lib, 0x894 / 4) + 1 + hiddenrow_shift(HR_ALBUMS)
+      : kind == LIST_ARTISTS ? word(lib, 0x884 / 4) + 1 + hiddenrow_shift(HR_ARTISTS) : 0;
     if (!(w && word(w, 0x90 / 4) && i && word(w, 0x9c / 4) == i))
         w = good_widget;       /* the wheel last moved the popup: the list from before */
     bs.widget = w && word(w, 0x90 / 4) && i && word(w, 0x9c / 4) == i ? w : 0;
@@ -209,8 +212,28 @@ void browse_restore(void)
             put(ui, UI_CACHE + cache_of[i], 0xffffffffu);
             call1(build_list[i], ui);
         }
+    /* The widget's row: the Hidden row (hiddenrow.c) shifts Apple's. */
     if (bs.widget && bs.kind != LIST_OTHER)
-        move_to(bs.widget, bs.row);
+        move_to(bs.widget, bs.row + (bs.kind == LIST_ALBUMS ? hiddenrow_shift(HR_ALBUMS)
+                                     : bs.kind == LIST_ARTISTS ? hiddenrow_shift(HR_ARTISTS) : 0));
+}
+
+/* The Hidden row (hiddenrow.c): level's array (0-3) built again from the
+ * query and its list refreshed, with the cursor on widget's row. */
+void browse_rebuild(unsigned level, uint32_t widget, uint32_t row)
+{
+    uint32_t ui = UI_OBJECT, lib = library(), slot = LIB_ARRAYS + 2 * level;
+
+    if (!lib || level > 3)
+        return;
+    if (word(lib, slot))
+        mem_free(word(lib, slot));
+    put(lib, slot, 0);
+    put(lib, slot + 1, 0);
+    put(ui, UI_CACHE + cache_of[level], 0xffffffffu);
+    call1(build_list[level], ui);
+    if (widget)
+        move_to(widget, row);
 }
 
 static uint32_t find_key(uint32_t array, uint32_t n, uint32_t key)
@@ -313,7 +336,6 @@ uint32_t browse_playing(void)
  * which puts its cursor back on row 0, so it goes to `row` again (clamped),
  * on the list held (browse_held), if that's the one with these rows. */
 #define mem_alloc       ((uint32_t (*)(uint32_t size))0xaa10c)
-#define mem_free        ((void (*)(uint32_t p))0xa9f70)
 #define songs_reset     ((void (*)(uint32_t ui))0xd6478)
 #define LIB_SONGS       (0x898 / 4)
 

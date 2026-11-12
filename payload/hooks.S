@@ -12,6 +12,7 @@
 #include "holdmenu.h"
 #include "debug.h"
 #include "resume.h"
+#include "hiddenrow.h"
 
     .text
     .arm
@@ -404,8 +405,10 @@ letter_hook:
 
 /* 0x7998c, the first instruction of the UI object's getter 0x7998c(ui, fourcc,
  * property, row, out*), which list rows ask for their label (was: push {r4-r9,
- * lr}). Notes the property of 'Str ' asks for letters.c. Entered with B like
- * vis_hook; back at 0x79990. */
+ * lr}). Notes the property of 'Str ' asks for letters.c. hiddenrow_label may
+ * answer the Hidden row itself (return 1, as the getter does) or change the
+ * row into Apple's (hiddenrow.c). Entered with B like vis_hook; back at
+ * 0x79990. */
     .global label_hook
 label_hook:
     push    {r12}
@@ -414,8 +417,58 @@ label_hook:
     ldreq   r12, =letter_prop
     streq   r2, [r12]
     pop     {r12}
+    push    {r0, r1, r2, r3, r12, lr}
+    mov     r0, r2                  @ property
+    add     r1, sp, #12             @ the row, as pushed
+    ldr     r2, [sp, #24]           @ out*, the fifth argument
+    bl      hiddenrow_label
+    cmp     r0, #0
+    pop     {r0, r1, r2, r3, r12, lr}
+    movne   r0, #1
+    bxne    lr
     push    {r4, r5, r6, r7, r8, sb, lr}
     ldr     pc, =0x79990
+
+/* 0x816a8, the first instruction of 0x816a8(obj), the native side of 0x08df.a9():
+ * the row of the list on obj's screen, -1 for none (was: push {r3-r5, lr}).
+ * Runs it, then hiddenrow_a9 makes a list's row Apple's (hiddenrow.c).
+ * Entered with B like vis_hook. */
+    .global a9_hook
+a9_hook:
+    push    {r0, lr}
+    bl      a9_orig
+    ldr     r1, [sp]                @ obj
+    bl      hiddenrow_a9
+    pop     {r1, pc}
+/* Apple's 0x816a8 itself: the replaced push, then the rest. */
+a9_orig:
+    push    {r3, r4, r5, lr}
+    ldr     pc, =0x816ac
+
+/* The Music lists' builders (0x08eb.f8 Genres 0xf1000, .f5 Artists 0xefe04,
+ * .f6 Composers 0xf0688, .f7 Albums 0xefdb4), where they take their array's
+ * count (r0) + 1 for "All" as the list's rows (was: add r0, r0, #1; r4 is
+ * the UI object, r1 and r2 are live). hiddenrow_count gives the rows: one
+ * more for the Hidden row, or the Hidden list's. */
+    .global hr_count_genres, hr_count_artists, hr_count_composers, hr_count_albums
+hr_count_genres:
+    mov     r12, #HR_GENRES
+    b       hr_count
+hr_count_artists:
+    mov     r12, #HR_ARTISTS
+    b       hr_count
+hr_count_composers:
+    mov     r12, #HR_COMPOSERS
+    b       hr_count
+hr_count_albums:
+    mov     r12, #HR_ALBUMS
+hr_count:
+    push    {r1, r2, r3, lr}
+    mov     r1, r12
+    mov     r2, r4
+    bl      hiddenrow_count
+    pop     {r1, r2, r3, lr}
+    bx      lr
 
 /* 0x1fabc, the first instruction of 0x1fabc(obj, element, string, flags), the
  * native side of 0x08de.60, which sets an element's text (was: push {r3, lr}).

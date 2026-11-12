@@ -735,6 +735,56 @@ Songs, Now Playing; bytecode, native methods and the browse state per step) and 
   them); with Show Hidden on, Artists and Albums list them too. The artist filter at the album level
   is not checked against a card with one album name under two artists.
 
+### The Hidden row (**confirmed** in emupod)
+
+`tools/emupod/probes/hrprobe.py` (each list's widget, the getter's calls) and `hiddenrow.py`.
+`payload/hiddenrow.c`.
+
+- **All four lists have "All"**: each builder (`.f8` Genres `0xf0fe8`, `.f5` Artists `0xefdec`, `.f6`
+  Composers `0xf0670`, `.f7` Albums `0xefd9c`) takes its array's count + 1 (the `add r0, r0, #1` at
+  `0xf1000`, `0xefe04`, `0xf0688`, `0xefdb4`), compares it with its cache (`ui+0x1308`, `+0x1304`,
+  `+0x1300`, `+0x12fc`) and only on a change sends it, `ui->vtable[0x48](ui, 'VMax', 0x33NN, count)`,
+  to the widget (`+0x9c`). The getter's row 0 of `0x3365`, `0x3364`, `0x3363`, `0x3362` is "All"
+  (string `0x330e`), row r the array's index r-1 (`0x79090`, `0x78eac`, `0x79034`, `0x78e68`). Only
+  `'Str '` is asked.
+- **A widget per list**: each Music list's screen has its own widget; `+0x1c`'s low half is the count
+  property it shows (`0x3305`, `0x3304`, `0x3303`, `0x3302`). The Albums one is also an artist's or a
+  composer's albums.
+- **Every row read is `0x08df.a9()`** (`0x816a8`: `[obj+0x24]`'s child `0x1700`, its cursor, -1
+  without one): Select (fns 238, 232, 218, 225), Play (240, 234, 220, 227) and the hold (239, 233,
+  219, 226) all go through it, and do nothing on -1.
+- **The array builders keep an array that's there** (the category builder `0x53278` returns while
+  the slot is set), so a level is built again by freeing its slot first (`0xa9f70`), then its `.fX`
+  with the cache at -1.
+- **Filters and `0x58440`'s cache**: the item verdicts it caches (`item+0x1c`) are dropped by the
+  filter setters (`0xd5f0c` genre, `0xd539c` artist, `0xd5744` composer, `0xd5150` album, each
+  `(lib, i)`) through `0x9d7ec`. Writing a filter word directly kept the old verdicts: Albums built
+  again after Menu back from Solo's songs came out empty. Menu back leaves the filter picked below
+  set, so the list's own filter and the ones below it go back to All through those setters first.
+- **Keys**: the arrays hold string-pool indices (`1`, `4` for two artists; artists and composers
+  share the pool), the track's `+0x38` genre, `+0x28` artist, `+0x34` composer, `+0x30` album.
+
+So Frogger shifts the widget's rows against Apple's: `+1` with the Hidden row on top, `-1` in the
+Hidden list (no "All"). The count hook adds it, `label_hook` answers row 0 or passes row - shift
+on, `a9_hook` hands Apple row - shift (-1 for the Hidden row, so Play and the hold do nothing
+there), and Select's row read in each list (`0x42d8`, `0x40aa`, `0x3c22`, `0x3e68`) opens the
+Hidden list. Only at the top: nothing browsed but the library (`lib+0x40` 0), no genre filter above
+Artists and Composers, no genre, artist or composer above Albums. N: keys some hidden song has and
+no shown song has, from `tracks.c`'s records, once per change (`hide_gen`).
+
+The Hidden list is the same screen and widget, built again in place with `hide_state.reveal` (the
+predicate hides nothing, there and below), then cut to N in the count hook; title `0x3f35`
+"Hidden". Menu there (fn 14 with no screen over it: fn 20's slides counted) builds the whole list
+again, with Apple's title back (`0xffffffe7`/`e8`/`ea`/`e9`, the pool constants fn 53 sets for
+Genres, Artists, Composers, Albums), on the Hidden row. The hold menu's Show works there (Apple's
+rows); `browse.c` saves and puts back the held row in Apple's numbering and moves the cursor to
+row + shift.
+
+Not checked: a device; the speed of the count on a big library with hidden songs (the perf card has
+none: none hidden skips it. The pass itself is about 1 M instructions for 5,000 songs, 77 ms, once per Hide, Show or database, in the first list opened after it); hidden items Apple itself doesn't list
+(a compilation's artist?) would count in N without being in the list; jump by letter in a list with
+the Hidden row (its row has no letter, so it sorts first).
+
 ### How songs start playing (for anything that hooks playback)
 
 - **From a list** (Select, fn 210 → `.e7` → `0xd6ab8` → `0xb6c38(lib, row)`): copies the list
