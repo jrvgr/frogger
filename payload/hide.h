@@ -14,7 +14,8 @@
 struct hide_state {
     uint8_t is_master;  /* +0: playlist being loaded is the master (library) */
     uint8_t show_all;   /* +1: Settings › Show Hidden (settings.c): hide nothing */
-    uint8_t pad[2];
+    uint8_t reveal;     /* +2: a Hidden list is open (hiddenrow.c): hide nothing below it either */
+    uint8_t pad;
     uint32_t master;    /* +4: master playlist object */
 };
 
@@ -50,6 +51,8 @@ struct hide_entry {
 void hide_reset(void);
 void hide_mark(uint32_t track);
 int hide_track(uint32_t track);
+uint32_t hide_gen(void);     /* changes whenever a song is hidden or shown, or a database loads */
+int hide_any(void);          /* some song is hidden */
 int hide_entry(uint32_t owner, uint32_t track);
 void hide_add(uint32_t track);
 void hide_show(uint32_t track);

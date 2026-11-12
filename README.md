@@ -40,7 +40,7 @@ a Mac app that also installs Frogger for you. Without it, see [Without Crate](#w
 - **Hold menu.** Hold Select on a song, album, artist, playlist or Now Playing: Add to Queue, Play Album Next (Play After Album on albums), Add to Playlist, Go to Album/Artist, Hide.
 - **Add to Playlist.** Add songs, albums or artists to any playlist on the iPod, synced ones included, or to a new one. They're kept on the iPod and survive a restart.
 - **Queue.** Queued songs play next, then playback goes back to where it was. Play, remove or clear from Now Playing or the main menu.
-- **Hidden songs.** Out of Artists, Albums, Genres and Composers, still in Songs and playlists. Settings › Show Hidden lists them.
+- **Hidden songs.** Out of Artists, Albums, Genres and Composers, still in Songs and playlists. Settings › Show Hidden lists them. A "Hidden (N)" row atop each of those lists opens just the hidden ones, where Show un-hides.
 - **Survives a resync.** Hidden songs, skip counts, bookmarks, covers and your playlists are kept by each song's database ID, so they stay with the right songs when a syncing app rewrites the iTunesDB (`docs/file-formats.md`).
 - **Lock Cover.** With Hold on while a song plays or is paused, the screen shows its cover large, the title and the progress bar.
 - **Quick settings.** Hold Menu anywhere: Backlight, Shuffle, Repeat, Sleep, Clicker.

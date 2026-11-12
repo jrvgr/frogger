@@ -18,6 +18,7 @@
 #include "nowplaying.h"
 #include "holdmenu.h"
 #include "letters.h"
+#include "hiddenrow.h"
 #include "battery.h"
 #include "tracks.h"
 
@@ -411,6 +412,8 @@ const void *frogger_resource(uint32_t fourcc, uint32_t id, uint32_t *size)
     if (hm)
         return hm;
     if ((hm = letter_resource(fourcc, id, size)))
+        return hm;
+    if ((hm = hiddenrow_resource(fourcc, id, size)))
         return hm;
     if ((hm = battery_resource(fourcc, id, size)))
         return hm;

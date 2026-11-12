@@ -57,12 +57,17 @@ HOOKS = [
     (0x57820, 0xe92d4010, "flash_hold_hook"),    # push  {r4, lr}
     (0x13c6e8, 0xe7970104, "click_hook"),        # ldr   r0, [r7, r4, lsl #2]
     (0x94984, 0xeb002a3f, "preload_hook"),       # bl    0x9f288
+    (0x816a8, 0xe92d4038, "a9_hook"),            # push  {r3, r4, r5, lr}
+    (0xf1000, 0xe2800001, "hr_count_genres"),    # add   r0, r0, #1
+    (0xefe04, 0xe2800001, "hr_count_artists"),   # add   r0, r0, #1
+    (0xf0688, 0xe2800001, "hr_count_composers"),  # add   r0, r0, #1
+    (0xefdb4, 0xe2800001, "hr_count_albums"),    # add   r0, r0, #1
 ]
 
 # Hooks entered with a plain B instead of BL: they sit where lr is still live (the first
 # instruction of a function), so they must not overwrite it, and they jump back to the
 # next instruction themselves.
-BRANCH_HOOKS = {"vis_hook", "vm_hook", "trans_hook", "queue_next_hook", "keep_hook", "label_hook", "title_hook", "tick_hook", "crash_hook", "counts_hook", "skip_next_hook", "skip_pick_hook", "lcd_hook", "drawn_hook", "disk_reinit_hook", "disk_read_hook", "flash_hold_hook"}
+BRANCH_HOOKS = {"vis_hook", "vm_hook", "trans_hook", "queue_next_hook", "keep_hook", "label_hook", "title_hook", "tick_hook", "crash_hook", "counts_hook", "skip_next_hook", "skip_pick_hook", "lcd_hook", "drawn_hook", "disk_reinit_hook", "disk_read_hook", "flash_hold_hook", "a9_hook"}
 
 # Hooks only some builds have (the debug record, `make -C loader DEBUG=1`): left out
 # when the payload doesn't define them.

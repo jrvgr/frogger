@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include "letters.h"
 #include "settings.h"
+#include "hiddenrow.h"
 
 #define UI_OBJECT       (*(volatile uint32_t *)0x43580c)
 #define W_CURSOR        (0x90 / 4)      /* the widget's cursor: vtable+0x11c is its row */
@@ -133,8 +134,8 @@ static int letter(uint32_t ui, uint32_t row)
     char c;
 
     label_get(ui, FOURCC_STR, letter_prop, row, &s);
-    if (!s)
-        return '#';
+    if (!s || s == hiddenrow_text)
+        return '#';             /* the Hidden row, on top (hiddenrow.c) */
     while (*s == ' ')
         s++;
     if ((s[0] | 0x20) == 't' && (s[1] | 0x20) == 'h' && (s[2] | 0x20) == 'e' && s[3] == ' ')

@@ -21,6 +21,7 @@ FEATURES = {
     "clicker": ("Clicker: Speaker, Headphones, Both; Click Volume; the piezo while paused", ["clicker.c", "settings.c"]),
     "afteralbum": ("Play After Album: the queue waits for the album playing", ["holdmenu.c", "queue.c"]),
     "unhide": ("Show (un-hide), Settings › Show Hidden, FroggerHidden", ["hide.c", "settings.c"]),
+    "hiddenrow": ("The Hidden row atop Artists, Albums, Genres, Composers: its list, Show there, Menu back", ["hiddenrow.c", "browse.c", "holdmenu.c", "hide.c"]),
     "quicksettings": ("Quick settings (hold Menu), its Sleep", ["holdmenu.c"]),
     "queuerow": ("The main menu's Queue row", ["queue.c"]),
     "holdrow": ("Add to Queue on any row, hidden songs above it", ["holdmenu.c", "queue.c", "hide.c"]),

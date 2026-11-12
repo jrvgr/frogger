@@ -23,6 +23,8 @@
 #define GONE 1u      /* no record is at 1 */
 
 static uint32_t table[TABLE_SIZE];
+static uint32_t gen;            /* hide_gen */
+static uint32_t marked;         /* hide_any */
 
 struct hide_state hide_state;
 
@@ -54,20 +56,37 @@ void hide_reset(void)
 
     for (i = 0; i < TABLE_SIZE; i++)
         table[i] = 0;
+    marked = 0;
+    gen++;
 }
 
 void hide_mark(uint32_t track)
 {
-    if (track > GONE)
-        slot(track, 1);
+    if (track > GONE && !slot(track, 0) && slot(track, 1)) {
+        marked++;
+        gen++;
+    }
 }
 
 static void unmark(uint32_t track)
 {
     uint32_t *s = track ? slot(track, 0) : 0;
 
-    if (s)
+    if (s) {
         *s = GONE;
+        marked--;
+        gen++;
+    }
+}
+
+uint32_t hide_gen(void)
+{
+    return gen;
+}
+
+int hide_any(void)
+{
+    return marked != 0;
 }
 
 int hide_track(uint32_t track)
@@ -79,7 +98,7 @@ int hide_track(uint32_t track)
  * library browsing hides anything: inside a playlist every track shows. */
 int hide_entry(uint32_t owner, uint32_t track)
 {
-    if (hide_state.show_all || !owner || !track)
+    if (hide_state.show_all || hide_state.reveal || !owner || !track)
         return 0;
 #ifndef FROGGER_HIDE_EVERYWHERE  /* test builds: hide in every list, to tell a wrong owner from an unused loop */
     if (owner != hide_state.master && owner != *(const uint32_t *)track)

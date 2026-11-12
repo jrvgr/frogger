@@ -84,6 +84,7 @@
 #include "nowplaying.h"
 #include "browse.h"
 #include "hide.h"
+#include "hiddenrow.h"
 #include "debug.h"
 
 #define TCMD_INT(n)     (((n) << 1) | 1)
@@ -605,6 +606,7 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
     case HM_SCREEN_FWD:
     case HM_SCREEN_BACK:
         screen(pc == HM_SCREEN_BACK);
+        hiddenrow_screen(pc == HM_SCREEN_BACK);
         return pc;
     case HM_FN_SELECT:
         /* Letting go of a hold clicks Select. Stock lists swallow that click
@@ -628,6 +630,8 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
             hm.swallow_menu = 0;
             return HM_NIL;
         }
+        if (!hm.up && !hm.open && hiddenrow_back())
+            return HM_NIL;              /* Menu on the Hidden list: the whole list again */
         if (hm.qs) {
             hm.qs = 0;
             qs_items(0);
@@ -724,6 +728,8 @@ uint32_t holdmenu_vm(uint32_t pc, uint32_t vm)
                 hm.show = hide_track(hm.np_track);
                 return open_popup(l, up.n ? ROWS_NP_UPNEXT : ROWS_NP);
             }
+            if (*l == 0xffffffffu)        /* -1, tagged */
+                return pc;              /* no row (the Hidden row, hiddenrow.c): stock does nothing */
             if (i == PLAYLISTS && *l == TCMD_INT(0))
                 return pc;              /* On-The-Go: queue.c clears it */
             hm.from = h;
@@ -873,6 +879,8 @@ uint32_t frogger_vm(uint32_t pc, uint32_t vm)
 {
     uint32_t to = holdmenu_vm(pc, vm);
 
+    if (to == pc)
+        to = hiddenrow_vm(pc, vm);
     to = queue_vm(to, vm);
     to = np_vm(to);
 #ifdef FROGGER_DEBUG

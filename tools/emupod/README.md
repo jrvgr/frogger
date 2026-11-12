@@ -29,6 +29,7 @@ this folder.
 | Hold menu on Now Playing as the first hold | `npfirst.py` |
 | Add to Queue on any row, hidden songs above it | `holdrow.py` |
 | Show (un-hide), Settings › Show Hidden, FroggerHidden | `unhide.py` |
+| The Hidden row atop Artists, Albums, Genres, Composers: its list, Show there, Menu back | `hiddenrow.py` |
 | Up Next: open, remove, play from, clear | `upnext.py` |
 | Play After Album: the queue waits for the album playing | `afteralbum.py` |
 | Clicker: Speaker, Headphones, Both; Click Volume; the piezo while paused | `clicker.py` |

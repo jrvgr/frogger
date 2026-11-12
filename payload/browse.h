@@ -18,6 +18,8 @@ uint32_t browse_artist_row(uint32_t track);
 unsigned browse_album_items(uint32_t track, int after, uint32_t *list, uint32_t *idx, uint32_t *nums, unsigned max);
 uint32_t browse_playing(void);
 int browse_row_hidden(int kind, uint32_t row);
+/* hiddenrow.c: level's array (0-3) built again, the list refreshed, its cursor on row. */
+void browse_rebuild(unsigned level, uint32_t widget, uint32_t row);
 /* Up Next: the songs list shows these items of list. */
 void browse_items(uint32_t list, const uint32_t *idx, unsigned n, int fresh, uint32_t row);
 /* Whether the songs array is still the one browse_items put in. */
