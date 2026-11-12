@@ -993,7 +993,9 @@ boundaries come from `push {..., lr}` prologues, so they are approximate.
   a song's start does. That setup also sets the headphones to full volume (`0x1403d0(2, 127, 127)`,
   R2 = `0x7b`, against `0x5c` at boot) and leaves it there until a song's start sets the user's; so
   the click puts back the left and right Apple had (its copy at `0x4449e00`, halfwords 3 and 4) with
-  `0x1403d0(2, left, right)` (issue 22: before the first song every click was a pop). Not seen: Sleep, a long idle (the copy should follow Apple's own power-down),
+  `0x1403d0(2, left, right)` (issue 22: before the first song every click was a pop). The other change at a
+  song's first start, GPIO C (`0xcf000028`) `0x48` to `0x08`, is bit 6: the drive's power, low
+  active (Rockbox, `power-ipod.c`), not the sound; bit 3 (C3) is the codec's, set from boot (`wmcodec-pp.c`). Not seen: Sleep, a long idle (the copy should follow Apple's own power-down),
   pops (emupod has no analog).
 - **Settings.** Apple's Clicker row cycles Off, Speaker, Headphones, Both (its function, fn 401,
   sends the value it wants, On or Off; quick settings' row sends the toggle `0x282f`): Off and On
